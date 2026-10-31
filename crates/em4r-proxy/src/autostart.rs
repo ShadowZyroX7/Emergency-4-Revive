@@ -142,10 +142,13 @@ unsafe fn maybe_start() {
     #[repr(C, align(8))]
     struct StrBuf([u8; 64]);
     let mut s = StrBuf([0; 64]);
+    let t0 = em4r_core::util::qpc_now();
     ctor(s.0.as_mut_ptr(), map.as_ptr());
+    // StartGame loads the whole map before it returns.
     start(game, game_type, s.0.as_mut_ptr());
     dtor(s.0.as_mut_ptr());
-    info!("Direktstart: Karte wird geladen");
+    let secs = em4r_core::util::qpc_to_ms(em4r_core::util::qpc_now() - t0) / 1000.0;
+    info!("Direktstart abgeschlossen: Karte in {secs:.0} s geladen");
 }
 
 /// Whether a direct start is waiting (the frame hook must stay active).
