@@ -1,0 +1,15 @@
+[package]
+name = "em4r-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EM4 Revive – dinput8.dll proxy that loads the mod into Em4.exe"
+
+[lib]
+name = "dinput8"
+crate-type = ["cdylib"]
+
+[dependencies]
+em4r-core.workspace = true
+em4r-gl.workspace = true
+em4r-perf.workspace = true

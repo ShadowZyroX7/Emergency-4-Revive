@@ -1,0 +1,46 @@
+# ============================================================
+#  EM4 Revive – Konfiguration
+#  Jede Option ist einzeln abschaltbar. Änderungen wirken beim
+#  nächsten Spielstart. Fehlt diese Datei, wird sie neu erzeugt.
+# ============================================================
+
+[general]
+# Hauptschalter. false = die Mod tut nichts (nur DirectInput wird durchgereicht).
+enabled = true
+# Ausführlicheres Log (em4revive.log) zur Fehlersuche.
+debug_log = false
+
+[perf]
+# Windows-Timer auf 1 ms stellen (genaueres Timing, weniger Mikroruckler).
+high_res_timer = true
+# FPS-Limit. 0 = aus. Beispiel: 60, 120, 144.
+frame_limit = 0
+# VSync: -1 = Spiel entscheidet, 0 = aus, 1 = an.
+vsync = -1
+# Windows-Skalierung (z.B. 125 %) nicht auf das Spiel anwenden.
+dpi_aware = true
+
+[stats]
+# Misst FPS, Frametimes, Draw-Calls und RAM.
+enabled = true
+# Schreibt die Messwerte als Tabelle nach em4revive_stats.csv.
+csv = true
+# Messintervall in Sekunden.
+interval_sec = 1.0
+
+[gl]
+# Tiefenpuffer erzwingen (Bits). Das Spiel fordert nur 16 an -> Flackern auf Distanz.
+# 0 = nicht verändern, sonst 24 oder 32.
+force_depth_bits = 24
+# Stencil-Puffer (Bits). 0 = nicht verändern, sonst 8.
+force_stencil_bits = 8
+# Anisotrope Texturfilterung (schärfere Böden/Straßen). 0 = nicht verändern, sonst 2/4/8/16.
+anisotropy = 16
+# Bilinear-Mipmapping zu Trilinear aufwerten (weichere Übergänge zwischen Mip-Stufen).
+force_trilinear = true
+# Draw-Calls zählen (für die Statistik, sehr geringer Aufwand).
+count_draw_calls = true
+
+[crash]
+# Bei einem Absturz eine Minidump-Datei (em4revive_crash_*.dmp) schreiben.
+minidump = true

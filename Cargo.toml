@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/em4r-core",
+    "crates/em4r-gl",
+    "crates/em4r-perf",
+    "crates/em4r-proxy",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["a.mallwitz"]
+
+[workspace.dependencies]
+em4r-core = { path = "crates/em4r-core" }
+em4r-gl = { path = "crates/em4r-gl" }
+em4r-perf = { path = "crates/em4r-perf" }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = "line-tables-only"   # PDB with line info for reading crash dumps

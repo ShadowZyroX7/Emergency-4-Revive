@@ -1,0 +1,7 @@
+# Em4.exe is a 32-bit process, so the mod DLL must be 32-bit as well.
+[build]
+target = "i686-pc-windows-msvc"
+
+# Link the C runtime statically so the DLL does not depend on any VC++ redistributable.
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
