@@ -3,6 +3,7 @@
 use crate::mods::{self, ModInfo};
 use crate::session::{self, Ending, Running, Summary, Target};
 use crate::settings::{self, Settings};
+use em4r_core::launch::StartMode;
 use eframe::egui::{self, Color32, RichText, Vec2};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -28,6 +29,7 @@ pub struct LauncherApp {
     settings: Settings,
     mods: Vec<ModInfo>,
     selection: Selection,
+    mode: StartMode,
     textures: HashMap<PathBuf, Option<egui::TextureHandle>>,
     running: Option<Running>,
     last: Option<Summary>,
@@ -51,9 +53,10 @@ impl LauncherApp {
         let mut app = Self {
             game_dir,
             settings_path,
-            settings,
+            settings: settings.clone(),
             mods: Vec::new(),
             selection: Selection::Original,
+            mode: settings.last_mode.unwrap_or(StartMode::FreeplayEndless),
             textures: HashMap::new(),
             running: None,
             last: None,
@@ -104,8 +107,9 @@ impl LauncherApp {
             Target::Original => String::new(),
             Target::Mod(f) => f.clone(),
         };
+        self.settings.last_mode = Some(self.mode);
         self.settings.save(&self.settings_path);
-        match session::launch(&dir, &target, &label) {
+        match session::launch(&dir, &target, self.mode, &label) {
             Ok(run) => {
                 self.running = Some(run);
                 self.last = None;
@@ -295,6 +299,23 @@ impl LauncherApp {
             });
         });
 
+        ui.add_space(14.0);
+        ui.label(RichText::new("Starten in").strong());
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            for m in [StartMode::FreeplayEndless, StartMode::FreeplayChallenge, StartMode::Menu] {
+                let selected = self.mode == m;
+                let text = RichText::new(m.label()).color(if selected { Color32::WHITE } else { MUTED });
+                let b = egui::Button::new(text)
+                    .fill(if selected { CARD_SELECTED } else { CARD })
+                    .stroke(egui::Stroke::new(1.0_f32, if selected { ACCENT } else { Color32::from_gray(50) }))
+                    .min_size(Vec2::new(0.0, 32.0));
+                if ui.add(b).clicked() {
+                    self.mode = m;
+                }
+            }
+        });
+
         ui.add_space(16.0);
         ui.horizontal(|ui| {
             let running = self.running.is_some();
@@ -307,8 +328,12 @@ impl LauncherApp {
             ui.add_space(12.0);
             ui.vertical(|ui| {
                 ui.add_space(6.0);
-                ui.label(RichText::new("Startet direkt ins Hauptmenü der Mod.").color(MUTED));
-                ui.label(RichText::new("Direktstart ins Freie Spiel folgt in einer späteren Version.").small().color(MUTED));
+                let hint = match self.mode {
+                    StartMode::Menu => "Startet ins Hauptmenü der Mod.",
+                    _ => "Lädt die Karte automatisch, sobald das Hauptmenü bereit ist.",
+                };
+                ui.label(RichText::new(hint).color(MUTED));
+                ui.label(RichText::new("Ohne Intro – der Mod-Wechsel im Spiel entfällt.").small().color(MUTED));
             });
         });
 

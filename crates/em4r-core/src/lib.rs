@@ -6,6 +6,7 @@ pub mod counters;
 pub mod crash;
 pub mod ffi;
 pub mod hook;
+pub mod launch;
 pub mod log;
 pub mod patch;
 pub mod pe;

@@ -1,0 +1,10 @@
+[package]
+name = "em4r-re"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Developer tool: static analysis of Em4.exe (disassembly, xrefs, callers). Not shipped."
+publish = false
+
+[dependencies]
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }

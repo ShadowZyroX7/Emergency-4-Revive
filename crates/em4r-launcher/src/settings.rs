@@ -10,6 +10,8 @@ pub struct Settings {
     pub last_mod: String,
     /// Game folder, if the launcher does not live inside it.
     pub game_dir: Option<PathBuf>,
+    /// Last chosen start mode.
+    pub last_mode: Option<em4r_core::launch::StartMode>,
 }
 
 impl Settings {
@@ -45,7 +47,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("s.toml");
         assert_eq!(Settings::load(&p), Settings::default());
-        let s = Settings { last_mod: "AUBMP".into(), game_dir: None };
+        let s = Settings {
+            last_mod: "AUBMP".into(),
+            game_dir: None,
+            last_mode: Some(em4r_core::launch::StartMode::FreeplayEndless),
+        };
         s.save(&p);
         assert_eq!(Settings::load(&p), s);
         std::fs::remove_dir_all(&dir).unwrap();

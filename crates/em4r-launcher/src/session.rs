@@ -1,5 +1,6 @@
 //! Starting Em4.exe and summarising the session afterwards.
 
+use em4r_core::launch::{LaunchRequest, StartMode};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Instant, SystemTime};
@@ -31,9 +32,24 @@ pub struct Running {
     pub target_label: String,
 }
 
-pub fn launch(game_dir: &Path, target: &Target, label: &str) -> std::io::Result<Running> {
-    let child = Command::new(game_dir.join("Em4.exe")).args(arguments(target)).current_dir(game_dir).spawn()?;
-    Ok(Running { child, started: Instant::now(), started_wall: SystemTime::now(), target_label: label.to_string() })
+pub fn launch(game_dir: &Path, target: &Target, mode: StartMode, label: &str) -> std::io::Result<Running> {
+    // The start request for the mod: written just before the start, read
+    // and deleted by the mod; "Hauptmenü" means no request at all.
+    let request = game_dir.join(em4r_core::launch::FILE_NAME);
+    let _ = std::fs::remove_file(&request);
+    if mode != StartMode::Menu {
+        LaunchRequest::new(mode).write(game_dir)?;
+    }
+    let spawned = Command::new(game_dir.join("Em4.exe")).args(arguments(target)).current_dir(game_dir).spawn();
+    let child = match spawned {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = std::fs::remove_file(&request);
+            return Err(e);
+        }
+    };
+    let label = if mode == StartMode::Menu { label.to_string() } else { format!("{label} – {}", mode.label()) };
+    Ok(Running { child, started: Instant::now(), started_wall: SystemTime::now(), target_label: label })
 }
 
 #[derive(Debug, Clone, PartialEq)]

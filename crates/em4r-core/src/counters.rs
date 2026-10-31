@@ -23,9 +23,26 @@ pub fn take_draw_calls() -> u32 {
     DRAW_CALLS.swap(0, Ordering::Relaxed)
 }
 
+/// QPC timestamp when the current uninterrupted rendering streak began
+/// (frames without a gap above [`STALL_MS`]).
+pub static STREAK_START_QPC: AtomicI64 = AtomicI64::new(0);
+
 #[inline]
 pub fn mark_present(now_qpc: i64) {
-    LAST_PRESENT_QPC.store(now_qpc, Ordering::Relaxed);
+    let last = LAST_PRESENT_QPC.swap(now_qpc, Ordering::Relaxed);
+    if classify(last, now_qpc, crate::util::qpc_freq()) == Phase::Loading {
+        STREAK_START_QPC.store(now_qpc, Ordering::Relaxed);
+    }
+}
+
+/// How long the game has been rendering without interruption (ms);
+/// 0 while loading or stalled.
+pub fn render_streak_ms() -> f64 {
+    let now = crate::util::qpc_now();
+    if phase_now() == Phase::Loading {
+        return 0.0;
+    }
+    crate::util::qpc_to_ms(now - STREAK_START_QPC.load(Ordering::Relaxed))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

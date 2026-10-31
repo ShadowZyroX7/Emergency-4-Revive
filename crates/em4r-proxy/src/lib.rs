@@ -5,6 +5,8 @@
 //! `DirectInput8Create` to the real system DLL and, while loading, redirect
 //! a few graphics imports of the game's modules to our improved versions.
 
+mod autostart;
+
 use core::ffi::c_void;
 use em4r_core::ffi::*;
 use em4r_core::hook::{self, IatHook};
@@ -77,6 +79,9 @@ fn init(module: HMODULE) {
     if cfg.game.skip_intro {
         apply_exe_patch(&em4r_core::patch::SKIP_INTRO);
     }
+    if is_em4_exe() {
+        autostart::init(&game_dir);
+    }
     if cfg.perf.dpi_aware {
         // SAFETY: plain Win32 call.
         unsafe { SetProcessDPIAware() };
@@ -88,7 +93,8 @@ fn init(module: HMODULE) {
 
     em4r_gl::configure(&cfg);
     hooks.extend(em4r_gl::hooks());
-    if em4r_perf::wants_swap_hook(&cfg) {
+    // The direct start needs frame timestamps to know when the menu is up.
+    if em4r_perf::wants_swap_hook(&cfg) || autostart::pending() {
         em4r_perf::configure(&cfg, &game_dir);
         hooks.extend(em4r_perf::hooks());
     }
@@ -122,14 +128,15 @@ fn init(module: HMODULE) {
     report(&installed);
 }
 
+fn is_em4_exe() -> bool {
+    module_path(core::ptr::null_mut()).map(|p| em4r_core::util::file_name_lower(&p)).unwrap_or_default() == "em4.exe"
+}
+
 /// Apply a verified code patch to Em4.exe (only if it is really Em4.exe).
 fn apply_exe_patch(p: &em4r_core::patch::BytePatch) {
     use em4r_core::patch::PatchResult;
-    let exe_name = module_path(core::ptr::null_mut())
-        .map(|p| em4r_core::util::file_name_lower(&p))
-        .unwrap_or_default();
-    if exe_name != "em4.exe" {
-        em4r_core::warn!("{}: Prozess ist nicht Em4.exe ({exe_name}) – übersprungen", p.name);
+    if !is_em4_exe() {
+        em4r_core::warn!("{}: Prozess ist nicht Em4.exe – übersprungen", p.name);
         return;
     }
     // SAFETY: we are in DllMain at process start; the game's main code has

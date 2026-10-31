@@ -45,6 +45,32 @@ pub const SKIP_INTRO: BytePatch = BytePatch {
     replacement: &[0xE9, 0x30, 0x00, 0x00, 0x00],
 };
 
+/// Bytes of a `call rel32` at `site` that targets `target`.
+pub fn call_rel32(site: usize, target: usize) -> [u8; 5] {
+    let rel = (target as i64 - (site as i64 + 5)) as i32;
+    let r = rel.to_le_bytes();
+    [0xE8, r[0], r[1], r[2], r[3]]
+}
+
+/// Redirect the `call` at `site` from `original_target` to `new_target`,
+/// but only if the instruction is exactly `call original_target`.
+///
+/// # Safety
+/// `site` must be mapped code that no other thread executes right now.
+pub unsafe fn redirect_call(site: usize, original_target: usize, new_target: usize) -> PatchResult {
+    let expected = call_rel32(site, original_target);
+    let replacement = call_rel32(site, new_target);
+    apply_at(site as *mut u8, &expected, &replacement)
+}
+
+/// Do the bytes at `addr` match `expected` (code signature check)?
+///
+/// # Safety
+/// `addr` must point to at least `expected.len()` mapped bytes.
+pub unsafe fn matches(addr: usize, expected: &[u8]) -> bool {
+    core::slice::from_raw_parts(addr as *const u8, expected.len()) == expected
+}
+
 /// Apply `p` to the module at `base`.
 ///
 /// # Safety
@@ -102,6 +128,28 @@ mod tests {
         let r = unsafe { apply_at(buf.as_mut_ptr(), SKIP_INTRO.expected, SKIP_INTRO.replacement) };
         assert_eq!(r, PatchResult::Mismatch(before.clone()));
         assert_eq!(buf, before);
+    }
+
+    #[test]
+    fn call_encoding_matches_em4_main_loop() {
+        // Em4.exe 0x477C10: E8 7B 37 2C 00 = call 0x73B390 (ProcessMessages)
+        assert_eq!(call_rel32(0x477C10, 0x73B390), [0xE8, 0x7B, 0x37, 0x2C, 0x00]);
+        // Backwards target (negative rel32).
+        let b = call_rel32(0x1000, 0x800);
+        assert_eq!(i32::from_le_bytes([b[1], b[2], b[3], b[4]]), 0x800 - 0x1005);
+    }
+
+    #[test]
+    fn redirect_call_in_buffer() {
+        let mut buf = vec![0u8; 16];
+        let site = buf.as_mut_ptr() as usize + 4;
+        let (orig, new) = (site + 0x1000, site + 0x2000);
+        buf[4..9].copy_from_slice(&call_rel32(site, orig));
+        assert_eq!(unsafe { redirect_call(site, orig, new) }, PatchResult::Applied);
+        assert_eq!(&buf[4..9], &call_rel32(site, new));
+        // A call to something else is left alone.
+        assert!(matches!(unsafe { redirect_call(site, orig + 1, new) }, PatchResult::AlreadyApplied | PatchResult::Mismatch(_)));
+        assert!(unsafe { matches(site, &call_rel32(site, new)) });
     }
 
     #[test]
