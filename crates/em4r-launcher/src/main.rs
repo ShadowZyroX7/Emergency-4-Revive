@@ -9,6 +9,8 @@ mod revive_cfg;
 mod session;
 mod settings;
 mod settings_page;
+mod stats;
+mod stats_page;
 
 use eframe::egui;
 

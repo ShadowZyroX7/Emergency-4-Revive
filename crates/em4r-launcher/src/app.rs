@@ -4,6 +4,7 @@ use crate::mods::{self, ModInfo};
 use crate::session::{self, Ending, Running, Summary, Target};
 use crate::settings::{self, Settings};
 use crate::settings_page::SettingsPage;
+use crate::stats_page::StatsPage;
 use em4r_core::launch::StartMode;
 use eframe::egui::{self, Color32, RichText, Vec2};
 use std::collections::HashMap;
@@ -22,6 +23,7 @@ const WARN: Color32 = Color32::from_rgb(230, 170, 60);
 enum Tab {
     Spielen,
     Einstellungen,
+    Statistik,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,6 +46,7 @@ pub struct LauncherApp {
     revive_status: (bool, String),
     tab: Tab,
     settings_page: Option<SettingsPage>,
+    stats_page: Option<StatsPage>,
 }
 
 impl LauncherApp {
@@ -73,6 +76,7 @@ impl LauncherApp {
             revive_status: (false, String::new()),
             tab: Tab::Spielen,
             settings_page: None,
+            stats_page: None,
         };
         app.refresh();
         // `EM4Revive.exe --einstellungen` opens the settings tab directly.
@@ -80,6 +84,12 @@ impl LauncherApp {
             if let Some(dir) = &app.game_dir {
                 app.settings_page = Some(SettingsPage::new(dir));
                 app.tab = Tab::Einstellungen;
+            }
+        }
+        if std::env::args().any(|a| a.eq_ignore_ascii_case("--statistik")) {
+            if let Some(dir) = &app.game_dir {
+                app.stats_page = Some(StatsPage::new(dir));
+                app.tab = Tab::Statistik;
             }
         }
         app
@@ -151,6 +161,8 @@ impl LauncherApp {
         if finished {
             if let (Some(run), Some(dir)) = (self.running.take(), self.game_dir.as_deref()) {
                 self.last = Some(session::summarize(dir, &run));
+                // Fresh numbers for the statistics tab.
+                self.stats_page = Some(StatsPage::new(dir));
             }
         }
     }
@@ -168,7 +180,9 @@ impl eframe::App for LauncherApp {
                 ui.label(RichText::new("EM4 REVIVE").size(24.0).strong().color(ACCENT));
                 ui.label(RichText::new("Launcher").size(18.0).color(MUTED));
                 ui.add_space(24.0);
-                for (tab, label) in [(Tab::Spielen, "Spielen"), (Tab::Einstellungen, "Einstellungen")] {
+                for (tab, label) in
+                    [(Tab::Spielen, "Spielen"), (Tab::Einstellungen, "Einstellungen"), (Tab::Statistik, "Statistik")]
+                {
                     let active = self.tab == tab;
                     let text = RichText::new(label).size(16.0).color(if active { Color32::WHITE } else { MUTED });
                     let b = egui::Button::new(text)
@@ -182,6 +196,11 @@ impl eframe::App for LauncherApp {
                                 if let Some(dir) = &self.game_dir {
                                     // Always show the current state of the files.
                                     self.settings_page = Some(SettingsPage::new(dir));
+                                }
+                            }
+                            Tab::Statistik => {
+                                if let Some(dir) = &self.game_dir {
+                                    self.stats_page = Some(StatsPage::new(dir));
                                 }
                             }
                             Tab::Spielen => self.refresh_status(),
@@ -217,6 +236,15 @@ impl eframe::App for LauncherApp {
             });
         });
 
+        if self.tab == Tab::Statistik {
+            egui::CentralPanel::default().show(ctx, |ui| match self.stats_page.as_mut() {
+                Some(p) => p.ui(ui),
+                None => {
+                    ui.colored_label(WARN, "Spielordner nicht gefunden.");
+                }
+            });
+            return;
+        }
         if self.tab == Tab::Einstellungen {
             let running = self.running.is_some();
             egui::CentralPanel::default().show(ctx, |ui| match self.settings_page.as_mut() {
