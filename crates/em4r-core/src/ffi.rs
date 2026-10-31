@@ -143,7 +143,16 @@ extern "system" {
     pub fn CloseHandle(handle: HANDLE) -> BOOL;
     pub fn Sleep(ms: u32);
     pub fn FlushInstructionCache(process: HANDLE, addr: *const c_void, size: usize) -> BOOL;
+    pub fn GetLastError() -> u32;
+    pub fn SetLastError(code: u32);
 }
+
+pub const ERROR_FILE_NOT_FOUND: u32 = 2;
+pub const ERROR_PATH_NOT_FOUND: u32 = 3;
+pub const OPEN_EXISTING: u32 = 3;
+/// Access bits that modify a file (GENERIC_WRITE, GENERIC_ALL, FILE_WRITE_DATA,
+/// FILE_APPEND_DATA, DELETE, WRITE_DAC, WRITE_OWNER, FILE_WRITE_ATTRIBUTES/EA).
+pub const WRITE_ACCESS_MASK: u32 = 0x4000_0000 | 0x1000_0000 | 0x2 | 0x4 | 0x1_0000 | 0x4_0000 | 0x8_0000 | 0x100 | 0x10;
 
 pub const PAGE_EXECUTE_READWRITE: u32 = 0x40;
 

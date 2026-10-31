@@ -5,6 +5,7 @@ pub mod config;
 pub mod counters;
 pub mod crash;
 pub mod ffi;
+pub mod fscache;
 pub mod hook;
 pub mod launch;
 pub mod log;

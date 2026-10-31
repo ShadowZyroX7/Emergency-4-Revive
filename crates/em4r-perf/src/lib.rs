@@ -185,8 +185,15 @@ fn flush_interval(st: &mut State, now: i64) {
     if st.intervals % 10 == 1 {
         let frame_ms = 1000.0 / s.fps_avg.max(0.001);
         info!(
-            "FPS {:.1} (1%-Low {:.1}, max Frametime {:.1} ms) | Draw-Calls {:.0} | RAM {:.0} MB | Bildwechsel (ReShade + Warten auf GPU/VSync) {:.1} ms von {:.1} ms pro Bild",
-            s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb, swap_ms, frame_ms
+            "FPS {:.1} (1%-Low {:.1}, max Frametime {:.1} ms) | Draw-Calls {:.0} | RAM {:.0} MB | Bildwechsel {:.1} ms von {:.1} ms | gesparte Dateisuchen {}",
+            s.fps_avg,
+            s.fps_1pct_low,
+            s.frametime_max_ms,
+            s.draws_avg,
+            private_mb,
+            swap_ms,
+            frame_ms,
+            em4r_core::counters::FS_CACHE_HITS.load(Ordering::Relaxed)
         );
     }
     if !st.memory_warned && private_mb as usize * 1048576 > MEMORY_WARN_BYTES {

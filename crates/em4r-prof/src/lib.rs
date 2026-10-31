@@ -31,9 +31,6 @@ pub struct Settings {
 }
 
 pub fn start(s: Settings) {
-    if s.file_io {
-        fileio::init();
-    }
     let spawned = std::thread::Builder::new()
         .name("em4r-profiler".into())
         .stack_size(256 * 1024)
@@ -165,6 +162,9 @@ fn write_report(path: &std::path::Path, agg: &Aggregate, seconds: f64, file_io: 
         warn!("Profil konnte nicht geschrieben werden: {e}");
     }
     let _ = std::fs::write(path.with_file_name("em4revive_profile_raw.csv"), agg.raw_csv());
+    if file_io {
+        fileio::write_missing(&path.with_file_name("em4revive_missing.txt"));
+    }
 }
 
 #[cfg(all(test, target_arch = "x86"))]

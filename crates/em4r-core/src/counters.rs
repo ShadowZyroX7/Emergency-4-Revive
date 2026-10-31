@@ -6,6 +6,9 @@ use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 /// Draw calls (glDrawElements/glDrawArrays/glBegin) since the last frame.
 pub static DRAW_CALLS: AtomicU32 = AtomicU32::new(0);
 
+/// Lookups of known-missing files answered by the cache (no disk access).
+pub static FS_CACHE_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// QPC timestamp of the last buffer swap (0 = no frame yet).
 pub static LAST_PRESENT_QPC: AtomicI64 = AtomicI64::new(0);
 

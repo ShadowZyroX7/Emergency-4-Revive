@@ -27,6 +27,9 @@ frame_limit = 0
 vsync = -1
 # Windows-Skalierung (z.B. 125 %) nicht auf das Spiel anwenden.
 dpi_aware = true
+# Merkt sich Dateien, die das Spiel vergeblich gesucht hat, und beantwortet weitere
+# Suchen danach sofort (das Spiel sucht dieselben fehlenden Dateien zehntausendfach).
+missing_file_cache = true
 
 [stats]
 # Misst FPS, Frametimes, Draw-Calls und RAM.

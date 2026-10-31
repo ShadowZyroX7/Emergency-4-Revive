@@ -102,13 +102,20 @@ fn init(module: HMODULE) {
         em4r_perf::configure(&cfg, &game_dir);
         hooks.extend(em4r_perf::hooks());
     }
-    if cfg.profiler.enabled {
-        if cfg.profiler.file_io {
-            hooks.extend(em4r_prof::fileio::hooks());
-            if is_em4_exe() {
-                em4r_prof::fileio::patch_em4_createfilew();
-            }
+    // File hooks: statistics (profiler) and/or the missing-file cache.
+    let file_stats = cfg.profiler.enabled && cfg.profiler.file_io;
+    let file_cache = cfg.perf.missing_file_cache;
+    if file_stats || file_cache {
+        em4r_prof::fileio::configure(file_stats, file_cache);
+        hooks.extend(em4r_prof::fileio::hooks(file_stats));
+        if is_em4_exe() {
+            em4r_prof::fileio::patch_em4_createfilew();
         }
+        if file_cache {
+            info!("Fehlende-Dateien-Speicher aktiv");
+        }
+    }
+    if cfg.profiler.enabled {
         // DllMain of a statically imported DLL runs on the main thread.
         em4r_prof::start(em4r_prof::Settings {
             // SAFETY: trivial Win32 call.
