@@ -58,6 +58,23 @@ impl Aggregate {
         self.total.values().sum()
     }
 
+    /// All raw data as CSV for offline analysis (`em4r-re fold`):
+    /// `kind;phase;module;offset_or_function;caller;count`.
+    pub fn raw_csv(&self) -> String {
+        let phase = |p: &Phase| if *p == Phase::Playing { "spiel" } else { "laden" };
+        let mut out = String::from("art;phase;modul;offset_oder_funktion;aufrufer;anzahl\n");
+        for (p, n) in &self.total {
+            out.push_str(&format!("gesamt;{};;;;{n}\n", phase(p)));
+        }
+        for ((p, m, off), n) in &self.hotspots {
+            out.push_str(&format!("hotspot;{};{m};0x{off:X};;{n}\n", phase(p)));
+        }
+        for ((p, f, c), n) in &self.callers {
+            out.push_str(&format!("aufruf;{};;{f};{c};{n}\n", phase(p)));
+        }
+        out
+    }
+
     /// Human-readable report section for one phase.
     pub fn render_phase(&self, phase: Phase, out: &mut String) {
         let total = *self.total.get(&phase).unwrap_or(&0);

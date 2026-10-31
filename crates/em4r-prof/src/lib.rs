@@ -164,6 +164,7 @@ fn write_report(path: &std::path::Path, agg: &Aggregate, seconds: f64, file_io: 
     if let Err(e) = std::fs::write(path, out) {
         warn!("Profil konnte nicht geschrieben werden: {e}");
     }
+    let _ = std::fs::write(path.with_file_name("em4revive_profile_raw.csv"), agg.raw_csv());
 }
 
 #[cfg(all(test, target_arch = "x86"))]

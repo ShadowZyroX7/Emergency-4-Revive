@@ -104,6 +104,34 @@ impl Image {
         }
     }
 
+    /// Named exports as (VA, name), sorted.
+    fn exports(&self) -> Vec<(u64, String)> {
+        let nt = u32_at(&self.data, 0x3C) as usize;
+        let opt = nt + 24;
+        let Some(ed) = self.off(u32_at(&self.data, opt + 96)) else { return Vec::new() };
+        let n_funcs = u32_at(&self.data, ed + 20) as usize;
+        let n_names = u32_at(&self.data, ed + 24) as usize;
+        let (Some(funcs), Some(names), Some(ords)) = (
+            self.off(u32_at(&self.data, ed + 28)),
+            self.off(u32_at(&self.data, ed + 32)),
+            self.off(u32_at(&self.data, ed + 36)),
+        ) else {
+            return Vec::new();
+        };
+        let mut v: Vec<(u64, String)> = (0..n_names)
+            .filter_map(|i| {
+                let ord = u16_at(&self.data, ords + i * 2) as usize;
+                (ord < n_funcs).then(|| {
+                    let rva = u32_at(&self.data, funcs + ord * 4);
+                    let name = self.cstr(u32_at(&self.data, names + i * 4)).unwrap_or_default();
+                    ((self.base + rva) as u64, name)
+                })
+            })
+            .collect();
+        v.sort();
+        v
+    }
+
     fn text(&self) -> &Section {
         self.sections.iter().find(|s| s.name == ".text").expect(".text")
     }
@@ -186,6 +214,7 @@ fn main() {
         .filter(|i| i.mnemonic() == Mnemonic::Call && i.op0_kind() == OpKind::NearBranch32)
         .map(|i| i.near_branch_target())
         .filter(|&x| x >= lo && x < hi)
+        .chain(img.exports().into_iter().map(|e| e.0).filter(|&x| x >= lo && x < hi))
         .collect();
     let func_of = |a: u64| starts.range(..=a).next_back().copied();
     let index_of = |a: u64| all.partition_point(|i| i.ip() < a);
@@ -269,6 +298,68 @@ fn main() {
                         print_ins(&img, &mut fmt, ins);
                     }
                 }
+            }
+        }
+        "fold" => {
+            // em4r-re <modul.dll> fold <profile_raw.csv> [laden|spiel]
+            let csv = std::fs::read_to_string(&args[3]).expect("CSV lesen");
+            let phase = args.get(4).map(String::as_str).unwrap_or("laden");
+            let module = std::path::Path::new(&args[1])
+                .file_name()
+                .map(|n| n.to_string_lossy().to_lowercase())
+                .unwrap_or_default();
+            let mut total = 0u64;
+            let mut by_func: HashMap<u64, u64> = HashMap::new();
+            let mut module_samples = 0u64;
+            for line in csv.lines().skip(1) {
+                let c: Vec<&str> = line.split(';').collect();
+                if c.len() < 6 || c[1] != phase {
+                    continue;
+                }
+                let n: u64 = c[5].parse().unwrap_or(0);
+                match c[0] {
+                    "gesamt" => total += n,
+                    "hotspot" if c[2].to_lowercase() == module => {
+                        let off = u64::from_str_radix(c[3].trim_start_matches("0x"), 16).unwrap_or(0);
+                        let addr = img.base as u64 + off;
+                        let f = func_of(addr).unwrap_or(addr);
+                        *by_func.entry(f).or_default() += n;
+                        module_samples += n;
+                    }
+                    _ => {}
+                }
+            }
+            let exports = img.exports();
+            let mut rows: Vec<_> = by_func.into_iter().collect();
+            rows.sort_by(|a, b| b.1.cmp(&a.1));
+            println!(
+                "; {module}, Phase {phase}: {module_samples} von {total} Stichproben ({:.1} %)",
+                module_samples as f64 * 100.0 / total.max(1) as f64
+            );
+            for (f, n) in rows.into_iter().take(30) {
+                let i = exports.partition_point(|e| e.0 <= f);
+                let exp = i
+                    .checked_sub(1)
+                    .map(|i| &exports[i])
+                    .map(|(a, name)| if *a == f { name.clone() } else { format!("{name}+0x{:X}", f - a) })
+                    .unwrap_or_default();
+                // Strings used inside the function as hints.
+                let end = starts.range(f + 1..).next().copied().unwrap_or(hi);
+                let mut hints: Vec<String> = all[index_of(f)..index_of(end)]
+                    .iter()
+                    .map(|ins| img.annotate(ins))
+                    .filter(|s| s.starts_with('"'))
+                    .collect();
+                hints.dedup();
+                hints.truncate(3);
+                println!(
+                    "{:5.1} %  0x{:X} (rva 0x{:X})  {}  {}",
+                    n as f64 * 100.0 / total.max(1) as f64,
+                    f,
+                    f - img.base as u64,
+                    exp,
+                    hints.join(" ")
+                );
             }
         }
         other => eprintln!("unbekannter Befehl {other}"),
