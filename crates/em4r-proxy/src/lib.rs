@@ -95,10 +95,24 @@ fn init(module: HMODULE) {
         unsafe { timeBeginPeriod(1) };
     }
 
+    // Post-processing (exclusive with the frame trace, which hooks the same
+    // functions). Must be configured before the GL hooks are collected.
+    let fx_on = cfg.fx.enabled && !cfg.profiler.frame_trace && is_em4_exe();
+    em4r_fx::configure(
+        fx_on,
+        em4r_fx::Params {
+            sharpen: cfg.fx.sharpen,
+            contrast: cfg.fx.contrast,
+            saturation: cfg.fx.saturation,
+            vibrance: cfg.fx.vibrance,
+            warmth: cfg.fx.warmth,
+            filmic: cfg.fx.filmic,
+        },
+    );
     em4r_gl::configure(&cfg);
     hooks.extend(em4r_gl::hooks());
     // The direct start needs frame timestamps to know when the menu is up.
-    if em4r_perf::wants_swap_hook(&cfg) || autostart::pending() {
+    if em4r_perf::wants_swap_hook(&cfg) || autostart::pending() || fx_on {
         em4r_perf::configure(&cfg, &game_dir);
         hooks.extend(em4r_perf::hooks());
     }
@@ -140,6 +154,11 @@ fn init(module: HMODULE) {
     // Frame trace: separate detours per module (functions not used elsewhere).
     if cfg.profiler.frame_trace {
         install_frame_trace(&game_dir, module);
+    } else if fx_on {
+        install_fx_tracking(&game_dir, module);
+        if cfg.fx.capture {
+            em4r_fx::arm_capture(game_dir.clone());
+        }
     }
     let _ = CONTEXT.set(Context { game_dir, own: module as usize, hooks });
     let installed = patch_game_modules();
@@ -169,6 +188,20 @@ fn apply_exe_patch(p: &em4r_core::patch::BytePatch) {
         ),
         PatchResult::Failed => error!("{}: Speicher konnte nicht beschrieben werden", p.name),
     }
+}
+
+fn install_fx_tracking(game_dir: &std::path::Path, own: HMODULE) {
+    let mut n = 0;
+    for (m, name) in hook::game_modules(game_dir, own, EXCLUDED_MODULES) {
+        let hooks = match name.as_str() {
+            "vision71.dll" => em4r_fx::track::vision::hooks(),
+            "em4.exe" => em4r_fx::track::em4::hooks(),
+            _ => continue,
+        };
+        // SAFETY: `m` comes from the loader's module list.
+        n += unsafe { hook::install_into(m, &name, &hooks) }.len();
+    }
+    info!("Grafik-Effekte vorbereitet ({n} Hooks)");
 }
 
 fn install_frame_trace(game_dir: &std::path::Path, own: HMODULE) {

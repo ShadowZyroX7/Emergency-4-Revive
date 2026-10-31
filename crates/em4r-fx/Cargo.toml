@@ -1,0 +1,9 @@
+[package]
+name = "em4r-fx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EM4 Revive post-processing: colour grading, sharpening, SSAO, depth of field"
+
+[dependencies]
+em4r-core.workspace = true

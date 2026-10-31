@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 em4r-core.workspace = true
 em4r-gl.workspace = true
+em4r-fx.workspace = true

@@ -57,18 +57,21 @@ type DrawArrays = unsafe extern "system" fn(u32, i32, i32);
 type Begin = unsafe extern "system" fn(u32);
 
 unsafe extern "system" fn hk_draw_elements(mode: u32, count: i32, ty: u32, idx: *const core::ffi::c_void) {
+    em4r_fx::before_draw();
     em4r_core::counters::add_draw_call();
     let f: DrawElements = core::mem::transmute(ORIG_DRAW_ELEMENTS.load(std::sync::atomic::Ordering::Relaxed));
     f(mode, count, ty, idx)
 }
 
 unsafe extern "system" fn hk_draw_arrays(mode: u32, first: i32, count: i32) {
+    em4r_fx::before_draw();
     em4r_core::counters::add_draw_call();
     let f: DrawArrays = core::mem::transmute(ORIG_DRAW_ARRAYS.load(std::sync::atomic::Ordering::Relaxed));
     f(mode, first, count)
 }
 
 unsafe extern "system" fn hk_begin(mode: u32) {
+    em4r_fx::before_draw();
     em4r_core::counters::add_draw_call();
     let f: Begin = core::mem::transmute(ORIG_BEGIN.load(std::sync::atomic::Ordering::Relaxed));
     f(mode)
@@ -84,7 +87,8 @@ pub fn hooks() -> Vec<IatHook> {
     if s.anisotropy > 0 || s.force_trilinear {
         v.extend(texture::hooks());
     }
-    if s.count_draw_calls {
+    // The draw hooks also drive the post-processing trigger.
+    if s.count_draw_calls || em4r_fx::enabled() {
         v.push(iat_hook!("opengl32.dll", "glDrawElements", hk_draw_elements, ORIG_DRAW_ELEMENTS));
         v.push(iat_hook!("opengl32.dll", "glDrawArrays", hk_draw_arrays, ORIG_DRAW_ARRAYS));
         v.push(iat_hook!("opengl32.dll", "glBegin", hk_begin, ORIG_BEGIN));

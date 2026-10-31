@@ -114,12 +114,16 @@ unsafe fn timed_swap(orig: &AtomicUsize, hdc: em4r_core::ffi::HDC) -> em4r_core:
 
 unsafe extern "system" fn hk_swap_buffers(hdc: em4r_core::ffi::HDC) -> em4r_core::ffi::BOOL {
     before_present();
-    timed_swap(&ORIG_SWAP, hdc)
+    let r = timed_swap(&ORIG_SWAP, hdc);
+    em4r_fx::on_swap(hdc as usize);
+    r
 }
 
 unsafe extern "system" fn hk_wgl_swap_buffers(hdc: em4r_core::ffi::HDC) -> em4r_core::ffi::BOOL {
     before_present();
-    timed_swap(&ORIG_WGL_SWAP, hdc)
+    let r = timed_swap(&ORIG_WGL_SWAP, hdc);
+    em4r_fx::on_swap(hdc as usize);
+    r
 }
 
 /// Called on the render thread right before every buffer swap.

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/em4r-core",
     "crates/em4r-gl",
+    "crates/em4r-fx",
     "crates/em4r-perf",
     "crates/em4r-prof",
     "crates/em4r-proxy",
@@ -20,6 +21,7 @@ authors = ["a.mallwitz"]
 [workspace.dependencies]
 em4r-core = { path = "crates/em4r-core" }
 em4r-gl = { path = "crates/em4r-gl" }
+em4r-fx = { path = "crates/em4r-fx" }
 em4r-perf = { path = "crates/em4r-perf" }
 em4r-prof = { path = "crates/em4r-prof" }
 serde = { version = "1", features = ["derive"] }

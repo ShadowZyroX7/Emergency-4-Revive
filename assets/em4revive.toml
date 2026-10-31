@@ -58,6 +58,24 @@ force_trilinear = true
 # Draw-Calls zählen (für die Statistik, sehr geringer Aufwand).
 count_draw_calls = true
 
+[fx]
+# Eigene Grafik-Effekte (nur auf die 3D-Welt, Menüs und Anzeigen bleiben unverändert).
+enabled = false
+# Diagnose: einmal ein Vergleichsbild vorher/nachher speichern (em4revive_fx_*.bmp).
+capture = false
+# Nachschärfen (CAS): 0 = aus, bis 1 = stark.
+sharpen = 0.5
+# Kontrast: 1 = unverändert.
+contrast = 1.06
+# Farbsättigung: 1 = unverändert.
+saturation = 1.10
+# Lebendigkeit (hebt blasse Farben stärker an als kräftige): 0 = unverändert.
+vibrance = 0.15
+# Farbtemperatur: 0 = neutral, positiv = wärmer, negativ = kühler.
+warmth = 0.10
+# Filmische Kontrastkurve (weiche Lichter und Schatten): 0 = aus, 1 = stark.
+filmic = 0.25
+
 [crash]
 # Bei einem Absturz eine Minidump-Datei (em4revive_crash_*.dmp) schreiben.
 minidump = true

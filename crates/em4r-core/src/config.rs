@@ -17,6 +17,26 @@ pub struct Config {
     pub crash: Crash,
     pub profiler: Profiler,
     pub game: Game,
+    pub fx: Fx,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Fx {
+    pub enabled: bool,
+    pub capture: bool,
+    pub sharpen: f32,
+    pub contrast: f32,
+    pub saturation: f32,
+    pub vibrance: f32,
+    pub warmth: f32,
+    pub filmic: f32,
+}
+
+impl Default for Fx {
+    fn default() -> Self {
+        Self { enabled: false, capture: false, sharpen: 0.5, contrast: 1.06, saturation: 1.10, vibrance: 0.15, warmth: 0.10, filmic: 0.25 }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -101,6 +121,7 @@ impl Default for Config {
             crash: Crash::default(),
             profiler: Profiler::default(),
             game: Game::default(),
+            fx: Fx::default(),
         }
     }
 }
@@ -176,6 +197,20 @@ impl Config {
             notes.push(format!("perf.vsync={} ungültig -> -1", p.vsync));
             p.vsync = -1;
         }
+        let fx = &mut self.fx;
+        let clamp = |v: &mut f32, lo: f32, hi: f32, def: f32, name: &str, notes: &mut Vec<String>| {
+            if !(v.is_finite() && *v >= lo && *v <= hi) {
+                notes.push(format!("fx.{name}={v} -> {def}"));
+                *v = def;
+            }
+        };
+        let d = Fx::default();
+        clamp(&mut fx.sharpen, 0.0, 1.0, d.sharpen, "sharpen", &mut notes);
+        clamp(&mut fx.contrast, 0.5, 1.5, d.contrast, "contrast", &mut notes);
+        clamp(&mut fx.saturation, 0.0, 2.0, d.saturation, "saturation", &mut notes);
+        clamp(&mut fx.vibrance, -1.0, 1.0, d.vibrance, "vibrance", &mut notes);
+        clamp(&mut fx.warmth, -1.0, 1.0, d.warmth, "warmth", &mut notes);
+        clamp(&mut fx.filmic, 0.0, 1.0, d.filmic, "filmic", &mut notes);
         let pr = &mut self.profiler;
         if !(100..=2000).contains(&pr.sample_hz) {
             notes.push(format!("profiler.sample_hz={} -> 1000", pr.sample_hz));
