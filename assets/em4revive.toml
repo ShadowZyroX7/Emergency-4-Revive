@@ -44,3 +44,14 @@ count_draw_calls = true
 [crash]
 # Bei einem Absturz eine Minidump-Datei (em4revive_crash_*.dmp) schreiben.
 minidump = true
+
+[profiler]
+# Analyse, wo das Spiel Zeit verbraucht (CPU-Stichproben + Dateizugriffe).
+# Ergebnis: em4revive_profile.txt. Kostet etwas Leistung -> nur zum Messen einschalten.
+enabled = false
+# Stichproben pro Sekunde (100-2000).
+sample_hz = 1000
+# Dateizugriffe mitmessen (Anzahl, fehlende Dateien, Lesezeit).
+file_io = true
+# Bericht alle X Sekunden aktualisieren.
+report_interval_sec = 15

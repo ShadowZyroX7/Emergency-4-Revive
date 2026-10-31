@@ -133,6 +133,73 @@ extern "system" {
     pub fn SetUnhandledExceptionFilter(filter: Option<TopLevelFilter>) -> Option<TopLevelFilter>;
     pub fn K32EnumProcessModules(process: HANDLE, modules: *mut HMODULE, cb: u32, needed: *mut u32) -> BOOL;
     pub fn K32GetProcessMemoryInfo(process: HANDLE, counters: *mut PROCESS_MEMORY_COUNTERS_EX, cb: u32) -> BOOL;
+    pub fn K32GetModuleInformation(process: HANDLE, module: HMODULE, info: *mut MODULEINFO, cb: u32) -> BOOL;
+    pub fn OpenThread(access: u32, inherit: BOOL, thread_id: u32) -> HANDLE;
+    pub fn SuspendThread(thread: HANDLE) -> u32;
+    pub fn ResumeThread(thread: HANDLE) -> u32;
+    pub fn GetThreadContext(thread: HANDLE, context: *mut CONTEXT) -> BOOL;
+    pub fn VirtualQuery(addr: *const c_void, info: *mut MEMORY_BASIC_INFORMATION, len: usize) -> usize;
+    pub fn ReadProcessMemory(process: HANDLE, addr: *const c_void, buf: *mut c_void, size: usize, read: *mut usize) -> BOOL;
+    pub fn CloseHandle(handle: HANDLE) -> BOOL;
+    pub fn Sleep(ms: u32);
+}
+
+pub const THREAD_SUSPEND_RESUME: u32 = 0x0002;
+pub const THREAD_GET_CONTEXT: u32 = 0x0008;
+pub const THREAD_QUERY_INFORMATION: u32 = 0x0040;
+pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE;
+pub const INVALID_FILE_ATTRIBUTES: u32 = 0xFFFF_FFFF;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct MODULEINFO {
+    pub lpBaseOfDll: *mut c_void,
+    pub SizeOfImage: u32,
+    pub EntryPoint: *mut c_void,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct MEMORY_BASIC_INFORMATION {
+    pub BaseAddress: *mut c_void,
+    pub AllocationBase: *mut c_void,
+    pub AllocationProtect: u32,
+    #[cfg(target_pointer_width = "64")]
+    pub PartitionId: u16,
+    pub RegionSize: usize,
+    pub State: u32,
+    pub Protect: u32,
+    pub Type: u32,
+}
+
+/// x86 `CONTEXT` (716 bytes). Only the control registers are used.
+#[cfg(target_arch = "x86")]
+#[repr(C, align(4))]
+pub struct CONTEXT {
+    pub raw: [u32; 179],
+}
+
+#[cfg(target_arch = "x86")]
+impl CONTEXT {
+    pub const CONTEXT_CONTROL: u32 = 0x0001_0001;
+    pub fn control() -> Self {
+        let mut c = CONTEXT { raw: [0; 179] };
+        c.raw[0] = Self::CONTEXT_CONTROL;
+        c
+    }
+    pub fn eip(&self) -> u32 {
+        self.raw[0xB8 / 4]
+    }
+    pub fn esp(&self) -> u32 {
+        self.raw[0xC4 / 4]
+    }
+}
+
+/// Placeholder so the crate still type-checks on non-x86 hosts.
+#[cfg(not(target_arch = "x86"))]
+#[repr(C)]
+pub struct CONTEXT {
+    pub raw: [u8; 0],
 }
 
 #[link(name = "user32")]
@@ -171,5 +238,13 @@ mod tests {
         assert_eq!(core::mem::offset_of!(PIXELFORMATDESCRIPTOR, cDepthBits), 23);
         assert_eq!(core::mem::offset_of!(PIXELFORMATDESCRIPTOR, cStencilBits), 24);
         assert_eq!(core::mem::offset_of!(PIXELFORMATDESCRIPTOR, dwLayerMask), 28);
+    }
+
+    #[cfg(target_arch = "x86")]
+    #[test]
+    fn x86_struct_sizes() {
+        assert_eq!(core::mem::size_of::<CONTEXT>(), 716);
+        assert_eq!(core::mem::size_of::<MEMORY_BASIC_INFORMATION>(), 28);
+        assert_eq!(core::mem::size_of::<MODULEINFO>(), 12);
     }
 }

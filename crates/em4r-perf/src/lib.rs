@@ -86,7 +86,8 @@ fn open_csv(path: &Path) -> Option<BufWriter<File>> {
 
 /// Whether any swap hook is needed at all.
 pub fn wants_swap_hook(cfg: &em4r_core::Config) -> bool {
-    cfg.stats.enabled || cfg.perf.frame_limit > 0 || cfg.perf.vsync >= 0
+    // The profiler needs frame timestamps to tell loading from playing.
+    cfg.stats.enabled || cfg.perf.frame_limit > 0 || cfg.perf.vsync >= 0 || cfg.profiler.enabled
 }
 
 pub fn hooks() -> Vec<IatHook> {
@@ -111,6 +112,7 @@ unsafe extern "system" fn hk_wgl_swap_buffers(hdc: em4r_core::ffi::HDC) -> em4r_
 /// Called on the render thread right before every buffer swap.
 fn before_present() {
     let now = qpc_now();
+    em4r_core::counters::mark_present(now);
     let draws = em4r_core::counters::take_draw_calls();
     // try_lock: never stall the render thread on our own bookkeeping.
     let Ok(mut guard) = STATE.try_lock() else { return };

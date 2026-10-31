@@ -89,6 +89,20 @@ fn init(module: HMODULE) {
         em4r_perf::configure(&cfg, &game_dir);
         hooks.extend(em4r_perf::hooks());
     }
+    if cfg.profiler.enabled {
+        if cfg.profiler.file_io {
+            hooks.extend(em4r_prof::fileio::hooks());
+        }
+        // DllMain of a statically imported DLL runs on the main thread.
+        em4r_prof::start(em4r_prof::Settings {
+            // SAFETY: trivial Win32 call.
+            main_thread_id: unsafe { GetCurrentThreadId() },
+            game_dir: game_dir.clone(),
+            sample_hz: cfg.profiler.sample_hz,
+            report_interval_sec: cfg.profiler.report_interval_sec,
+            file_io: cfg.profiler.file_io,
+        });
+    }
     // Modules loaded later (plugins) get patched as well.
     hooks.extend([
         iat_hook!("kernel32.dll", "LoadLibraryA", hk_load_library_a, ORIG_LLA),

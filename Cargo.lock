@@ -25,12 +25,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "em4r-prof"
+version = "0.1.0"
+dependencies = [
+ "em4r-core",
+]
+
+[[package]]
 name = "em4r-proxy"
 version = "0.1.0"
 dependencies = [
  "em4r-core",
  "em4r-gl",
  "em4r-perf",
+ "em4r-prof",
 ]
 
 [[package]]

@@ -4,6 +4,7 @@ members = [
     "crates/em4r-core",
     "crates/em4r-gl",
     "crates/em4r-perf",
+    "crates/em4r-prof",
     "crates/em4r-proxy",
     "crates/em4r-smoke",
 ]
@@ -18,6 +19,7 @@ authors = ["a.mallwitz"]
 em4r-core = { path = "crates/em4r-core" }
 em4r-gl = { path = "crates/em4r-gl" }
 em4r-perf = { path = "crates/em4r-perf" }
+em4r-prof = { path = "crates/em4r-prof" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 

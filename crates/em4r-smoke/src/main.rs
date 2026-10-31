@@ -31,16 +31,32 @@ fn main() -> ExitCode {
     let dll = dir.join("dinput8.dll");
     std::fs::copy(&src, &dll).expect("copy dll");
 
+    // Same as the shipped defaults, but with the profiler switched on.
+    // (Independent of line endings: switch the first `enabled` after [profiler].)
+    let base = em4r_core::config::DEFAULT_TOML;
+    let cfg = match base.find("[profiler]") {
+        Some(p) => {
+            let (head, tail) = base.split_at(p);
+            format!("{head}{}", tail.replacen("enabled = false", "enabled = true", 1))
+        }
+        None => base.to_string(),
+    };
+    let profiler_on = em4r_core::Config::parse(&cfg).map(|c| c.profiler.enabled).unwrap_or(false);
+    std::fs::write(dir.join("em4revive.toml"), cfg).expect("write toml");
+
     let mut all = true;
+    all &= check(profiler_on, "Test-Config mit eingeschaltetem Profiler erzeugt");
     unsafe {
         let m = LoadLibraryW(wide(&dll).as_ptr());
         all &= check(!m.is_null(), "DLL lädt (DllMain läuft ohne Absturz)");
         if m.is_null() {
             return ExitCode::FAILURE;
         }
-        all &= check(dir.join("em4revive.toml").exists(), "em4revive.toml wird angelegt");
+        std::thread::sleep(std::time::Duration::from_millis(300));
         let log = std::fs::read_to_string(dir.join("em4revive.log")).unwrap_or_default();
         all &= check(log.contains("EM4 Revive"), "em4revive.log wird geschrieben");
+        all &= check(!log.contains("WARN  | Config"), "Config ohne Warnungen gelesen");
+        all &= check(log.contains("Profiler aktiv"), "Profiler-Thread läuft");
 
         let p = GetProcAddress(m, b"DirectInput8Create\0".as_ptr());
         all &= check(!p.is_null(), "Export 'DirectInput8Create' (undekoriert) vorhanden");

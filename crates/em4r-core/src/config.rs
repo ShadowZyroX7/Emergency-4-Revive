@@ -15,6 +15,22 @@ pub struct Config {
     pub stats: Stats,
     pub gl: Gl,
     pub crash: Crash,
+    pub profiler: Profiler,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Profiler {
+    pub enabled: bool,
+    pub sample_hz: u32,
+    pub file_io: bool,
+    pub report_interval_sec: u32,
+}
+
+impl Default for Profiler {
+    fn default() -> Self {
+        Self { enabled: false, sample_hz: 1000, file_io: true, report_interval_sec: 15 }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -65,6 +81,7 @@ impl Default for Config {
             stats: Stats::default(),
             gl: Gl::default(),
             crash: Crash::default(),
+            profiler: Profiler::default(),
         }
     }
 }
@@ -134,6 +151,15 @@ impl Config {
         if !(-1..=4).contains(&p.vsync) {
             notes.push(format!("perf.vsync={} ungültig -> -1", p.vsync));
             p.vsync = -1;
+        }
+        let pr = &mut self.profiler;
+        if !(100..=2000).contains(&pr.sample_hz) {
+            notes.push(format!("profiler.sample_hz={} -> 1000", pr.sample_hz));
+            pr.sample_hz = 1000;
+        }
+        if !(5..=600).contains(&pr.report_interval_sec) {
+            notes.push(format!("profiler.report_interval_sec={} -> 15", pr.report_interval_sec));
+            pr.report_interval_sec = 15;
         }
         let s = &mut self.stats;
         if !(s.interval_sec.is_finite() && (0.1..=60.0).contains(&s.interval_sec)) {
