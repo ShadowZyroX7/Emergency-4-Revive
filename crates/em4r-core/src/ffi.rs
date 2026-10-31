@@ -142,7 +142,10 @@ extern "system" {
     pub fn ReadProcessMemory(process: HANDLE, addr: *const c_void, buf: *mut c_void, size: usize, read: *mut usize) -> BOOL;
     pub fn CloseHandle(handle: HANDLE) -> BOOL;
     pub fn Sleep(ms: u32);
+    pub fn FlushInstructionCache(process: HANDLE, addr: *const c_void, size: usize) -> BOOL;
 }
+
+pub const PAGE_EXECUTE_READWRITE: u32 = 0x40;
 
 pub const THREAD_SUSPEND_RESUME: u32 = 0x0002;
 pub const THREAD_GET_CONTEXT: u32 = 0x0008;

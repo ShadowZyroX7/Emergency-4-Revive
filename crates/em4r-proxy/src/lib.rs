@@ -74,6 +74,9 @@ fn init(module: HMODULE) {
             ORIG_SET_UEF
         ));
     }
+    if cfg.game.skip_intro {
+        apply_exe_patch(&em4r_core::patch::SKIP_INTRO);
+    }
     if cfg.perf.dpi_aware {
         // SAFETY: plain Win32 call.
         unsafe { SetProcessDPIAware() };
@@ -117,6 +120,30 @@ fn init(module: HMODULE) {
     let _ = CONTEXT.set(Context { game_dir, own: module as usize, hooks });
     let installed = patch_game_modules();
     report(&installed);
+}
+
+/// Apply a verified code patch to Em4.exe (only if it is really Em4.exe).
+fn apply_exe_patch(p: &em4r_core::patch::BytePatch) {
+    use em4r_core::patch::PatchResult;
+    let exe_name = module_path(core::ptr::null_mut())
+        .map(|p| em4r_core::util::file_name_lower(&p))
+        .unwrap_or_default();
+    if exe_name != "em4.exe" {
+        em4r_core::warn!("{}: Prozess ist nicht Em4.exe ({exe_name}) – übersprungen", p.name);
+        return;
+    }
+    // SAFETY: we are in DllMain at process start; the game's main code has
+    // not run yet, so nothing executes the patched bytes concurrently.
+    let base = unsafe { GetModuleHandleW(core::ptr::null()) };
+    match unsafe { em4r_core::patch::apply(base, p) } {
+        PatchResult::Applied => info!("Patch aktiv: {}", p.name),
+        PatchResult::AlreadyApplied => info!("Patch war schon aktiv: {}", p.name),
+        PatchResult::Mismatch(found) => em4r_core::warn!(
+            "{}: unbekannte Em4.exe-Version (gefunden {:02X?}, erwartet {:02X?}) – nicht angewendet",
+            p.name, found, p.expected
+        ),
+        PatchResult::Failed => error!("{}: Speicher konnte nicht beschrieben werden", p.name),
+    }
 }
 
 /// Patch every game module that is currently loaded.

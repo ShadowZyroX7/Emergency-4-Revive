@@ -10,6 +10,11 @@ enabled = true
 # Ausführlicheres Log (em4revive.log) zur Fehlersuche.
 debug_log = false
 
+[game]
+# Sixteen-Tons-Logo, 1 Sekunde Pause und Intro-Video beim Start überspringen.
+# (Nur im Arbeitsspeicher – Em4.exe auf der Festplatte bleibt unverändert.)
+skip_intro = true
+
 [perf]
 # Windows-Timer auf 1 ms stellen (genaueres Timing, weniger Mikroruckler).
 high_res_timer = true

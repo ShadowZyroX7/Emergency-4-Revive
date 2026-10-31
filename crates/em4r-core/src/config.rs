@@ -16,6 +16,19 @@ pub struct Config {
     pub gl: Gl,
     pub crash: Crash,
     pub profiler: Profiler,
+    pub game: Game,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Game {
+    pub skip_intro: bool,
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        Self { skip_intro: true }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -82,6 +95,7 @@ impl Default for Config {
             gl: Gl::default(),
             crash: Crash::default(),
             profiler: Profiler::default(),
+            game: Game::default(),
         }
     }
 }
