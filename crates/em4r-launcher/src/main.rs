@@ -3,9 +3,12 @@
 
 mod app;
 mod dds;
+mod em4cfg;
 mod mods;
+mod revive_cfg;
 mod session;
 mod settings;
+mod settings_page;
 
 use eframe::egui;
 

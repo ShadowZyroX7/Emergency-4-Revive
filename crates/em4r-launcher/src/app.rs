@@ -3,6 +3,7 @@
 use crate::mods::{self, ModInfo};
 use crate::session::{self, Ending, Running, Summary, Target};
 use crate::settings::{self, Settings};
+use crate::settings_page::SettingsPage;
 use em4r_core::launch::StartMode;
 use eframe::egui::{self, Color32, RichText, Vec2};
 use std::collections::HashMap;
@@ -16,6 +17,12 @@ const CARD_SELECTED: Color32 = Color32::from_rgb(58, 36, 38);
 const MUTED: Color32 = Color32::from_rgb(150, 154, 160);
 const OK: Color32 = Color32::from_rgb(90, 190, 110);
 const WARN: Color32 = Color32::from_rgb(230, 170, 60);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tab {
+    Spielen,
+    Einstellungen,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
@@ -35,6 +42,8 @@ pub struct LauncherApp {
     last: Option<Summary>,
     error: Option<String>,
     revive_status: (bool, String),
+    tab: Tab,
+    settings_page: Option<SettingsPage>,
 }
 
 impl LauncherApp {
@@ -62,8 +71,17 @@ impl LauncherApp {
             last: None,
             error: None,
             revive_status: (false, String::new()),
+            tab: Tab::Spielen,
+            settings_page: None,
         };
         app.refresh();
+        // `EM4Revive.exe --einstellungen` opens the settings tab directly.
+        if std::env::args().any(|a| a.eq_ignore_ascii_case("--einstellungen")) {
+            if let Some(dir) = &app.game_dir {
+                app.settings_page = Some(SettingsPage::new(dir));
+                app.tab = Tab::Einstellungen;
+            }
+        }
         app
     }
 
@@ -80,6 +98,12 @@ impl LauncherApp {
             .map(Selection::Mod)
             .unwrap_or(Selection::Original);
         self.revive_status = revive_status(&dir);
+    }
+
+    fn refresh_status(&mut self) {
+        if let Some(dir) = &self.game_dir {
+            self.revive_status = revive_status(dir);
+        }
     }
 
     fn texture(&mut self, ctx: &egui::Context, path: &Path) -> Option<egui::TextureHandle> {
@@ -143,6 +167,27 @@ impl eframe::App for LauncherApp {
             ui.horizontal_centered(|ui| {
                 ui.label(RichText::new("EM4 REVIVE").size(24.0).strong().color(ACCENT));
                 ui.label(RichText::new("Launcher").size(18.0).color(MUTED));
+                ui.add_space(24.0);
+                for (tab, label) in [(Tab::Spielen, "Spielen"), (Tab::Einstellungen, "Einstellungen")] {
+                    let active = self.tab == tab;
+                    let text = RichText::new(label).size(16.0).color(if active { Color32::WHITE } else { MUTED });
+                    let b = egui::Button::new(text)
+                        .fill(if active { CARD_SELECTED } else { Color32::TRANSPARENT })
+                        .stroke(egui::Stroke::new(1.0_f32, if active { ACCENT } else { Color32::TRANSPARENT }))
+                        .min_size(Vec2::new(110.0, 32.0));
+                    if ui.add(b).clicked() && self.tab != tab {
+                        self.tab = tab;
+                        match tab {
+                            Tab::Einstellungen => {
+                                if let Some(dir) = &self.game_dir {
+                                    // Always show the current state of the files.
+                                    self.settings_page = Some(SettingsPage::new(dir));
+                                }
+                            }
+                            Tab::Spielen => self.refresh_status(),
+                        }
+                    }
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let (ok, text) = &self.revive_status;
                     let color = if *ok { OK } else { WARN };
@@ -171,6 +216,17 @@ impl eframe::App for LauncherApp {
                 });
             });
         });
+
+        if self.tab == Tab::Einstellungen {
+            let running = self.running.is_some();
+            egui::CentralPanel::default().show(ctx, |ui| match self.settings_page.as_mut() {
+                Some(p) => p.ui(ui, running),
+                None => {
+                    ui.colored_label(WARN, "Spielordner nicht gefunden.");
+                }
+            });
+            return;
+        }
 
         egui::SidePanel::left("mods").resizable(false).exact_width(340.0).show(ctx, |ui| {
             ui.add_space(8.0);
