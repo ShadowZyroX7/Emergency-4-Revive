@@ -58,7 +58,8 @@ fn run(s: Settings) {
     let sleep_ms = (1000 / s.sample_hz).max(1);
     let report_path = s.game_dir.join("em4revive_profile.txt");
     let started = qpc_now();
-    let mut mods = ModuleMap::snapshot(&s.game_dir);
+    let mut cache = modmap::ExportCache::default();
+    let mut mods = ModuleMap::snapshot(&s.game_dir, &mut cache);
     let mut last_refresh = started;
     let mut last_report = started;
     let mut agg = Aggregate::default();
@@ -89,12 +90,12 @@ fn run(s: Settings) {
         // ---- end of critical section ---------------------------------
 
         if ok {
-            agg.add(phase, ctx.eip() as usize, &stack[..copied / 4], &mods);
+            agg.add(phase, ctx.eip() as usize, &stack[..copied / 4], &mods, code_before);
         }
 
         let now = qpc_now();
         if qpc_to_ms(now - last_refresh) > MODULE_REFRESH_MS {
-            mods = ModuleMap::snapshot(&s.game_dir);
+            mods = ModuleMap::snapshot(&s.game_dir, &mut cache);
             last_refresh = now;
         }
         if qpc_to_ms(now - last_report) > s.report_interval_sec as f64 * 1000.0 {
@@ -129,6 +130,17 @@ unsafe fn copy_stack(esp: usize, buf: &mut [u32]) -> usize {
         return 0;
     }
     read
+}
+
+/// The 7 code bytes before `addr`, read safely (unreadable -> None).
+fn code_before(addr: usize) -> Option<[u8; 7]> {
+    let mut buf = [0u8; 7];
+    let mut read = 0usize;
+    // SAFETY: ReadProcessMemory validates the address range itself.
+    let ok = unsafe {
+        ReadProcessMemory(GetCurrentProcess(), (addr - 7) as *const _, buf.as_mut_ptr() as *mut _, 7, &mut read)
+    };
+    (ok != 0 && read == 7).then_some(buf)
 }
 
 fn write_report(path: &std::path::Path, agg: &Aggregate, seconds: f64, file_io: bool) {
@@ -190,7 +202,7 @@ mod tests {
             OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, tid.load(Ordering::SeqCst))
         };
         assert!(!h.is_null());
-        let mods = ModuleMap::snapshot(std::path::Path::new(r"C:\nowhere"));
+        let mods = ModuleMap::snapshot(std::path::Path::new(r"C:\nowhere"), &mut modmap::ExportCache::default());
         let mut agg = Aggregate::default();
         let mut stack = [0u32; 256];
         for _ in 0..50 {
@@ -200,7 +212,7 @@ mod tests {
                 assert!(GetThreadContext(h, &mut ctx) != 0);
                 let n = copy_stack(ctx.esp() as usize, &mut stack);
                 ResumeThread(h);
-                agg.add(Phase::Playing, ctx.eip() as usize, &stack[..n / 4], &mods);
+                agg.add(Phase::Playing, ctx.eip() as usize, &stack[..n / 4], &mods, code_before);
             }
         }
         stop.store(true, Ordering::Relaxed);

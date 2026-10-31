@@ -41,6 +41,7 @@ unsafe fn cstr_eq(addr: usize, s: &str, ignore_case: bool) -> bool {
     *((addr + bytes.len()) as *const u8) == 0
 }
 
+const DIR_EXPORT: usize = 0;
 const DIR_IMPORT: usize = 1;
 const DIR_DELAY_IMPORT: usize = 13;
 const DELAY_DESCRIPTOR_SIZE: usize = 32;
@@ -174,6 +175,67 @@ pub unsafe fn find_iat_slot(module: HMODULE, dll: &str, func: &str) -> Option<*m
     }
 }
 
+/// Named exports of a loaded module as (RVA, name), sorted by RVA.
+/// Used to turn addresses inside Windows DLLs into function names.
+///
+/// # Safety
+/// `module` must be a module mapped in this process.
+pub unsafe fn exports(module: HMODULE) -> Vec<(u32, String)> {
+    let base = module as usize;
+    let Some(ed) = data_directory(base, DIR_EXPORT) else { return Vec::new() };
+    let n_funcs = rd32(ed + 20) as usize;
+    let n_names = rd32(ed + 24) as usize;
+    let funcs = base + rd32(ed + 28) as usize;
+    let names = base + rd32(ed + 32) as usize;
+    let ords = base + rd32(ed + 36) as usize;
+    let mut out = Vec::with_capacity(n_names);
+    for i in 0..n_names.min(65536) {
+        let ord = rd16(ords + i * 2) as usize;
+        if ord >= n_funcs {
+            continue;
+        }
+        let rva = rd32(funcs + ord * 4);
+        let name_ptr = base + rd32(names + i * 4) as usize;
+        let mut name = String::new();
+        let mut p = name_ptr;
+        while *(p as *const u8) != 0 && name.len() < 128 {
+            name.push(*(p as *const u8) as char);
+            p += 1;
+        }
+        out.push((rva, name));
+    }
+    // Export names come alphabetically; a stable sort keeps that order among
+    // aliases of one address (NtClose/ZwClose), and dedup keeps the first.
+    out.sort_by_key(|e| e.0);
+    out.dedup_by_key(|e| e.0);
+    out
+}
+
+/// Name of the export containing `rva` (nearest export at or below it).
+pub fn symbolize(exports: &[(u32, String)], rva: u32) -> Option<&str> {
+    let i = exports.partition_point(|e| e.0 <= rva);
+    exports.get(i.checked_sub(1)?).map(|e| e.1.as_str())
+}
+
+/// Does the code right before `ret` look like an x86 `call` instruction?
+/// `before` holds the 7 bytes preceding the candidate return address.
+/// This filters out stale stack values that merely point into a module.
+pub fn preceded_by_call(before: &[u8; 7]) -> bool {
+    let b = |back: usize| before[7 - back];
+    // call rel32
+    b(5) == 0xE8
+        // call [disp32] / call [reg+disp32]
+        || (b(6) == 0xFF && (b(5) == 0x15 || (b(5) & 0xF8) == 0x90 && b(5) != 0x94))
+        // call [reg+sib+disp32]
+        || (b(7) == 0xFF && b(6) == 0x94)
+        // call reg / call [reg]
+        || (b(2) == 0xFF && ((b(1) & 0xF8) == 0xD0 || ((b(1) & 0xF8) == 0x10 && b(1) != 0x14 && b(1) != 0x15)))
+        // call [reg+disp8] / call [reg+sib]
+        || (b(3) == 0xFF && (((b(2) & 0xF8) == 0x50 && b(2) != 0x54) || b(2) == 0x14))
+        // call [reg+sib+disp8]
+        || (b(4) == 0xFF && b(3) == 0x54)
+}
+
 /// Write `value` into an IAT slot. Returns the previous value.
 ///
 /// # Safety
@@ -254,6 +316,38 @@ mod tests {
             assert!(find_delay_iat_slot(m, "opengl32.dll", "wglGetProcAddress").is_some());
             assert!(find_delay_iat_slot(m, "gdi32.dll", "NoSuchFunction").is_none());
             crate::ffi::FreeLibrary(m);
+        }
+    }
+
+    #[test]
+    fn exports_of_kernel32_resolve_names() {
+        unsafe {
+            let k32 = GetModuleHandleW(crate::util::wide("kernel32.dll").as_ptr());
+            let ex = exports(k32);
+            assert!(ex.len() > 500);
+            let addr = crate::util::loaded_proc("kernel32.dll", "GetTickCount").unwrap();
+            let rva = (addr - k32 as usize) as u32;
+            assert_eq!(symbolize(&ex, rva), Some("GetTickCount"));
+            assert!(symbolize(&ex, 0).is_none());
+        }
+    }
+
+    #[test]
+    fn call_instruction_detection() {
+        // Each array = the 7 bytes before a return address.
+        let rel32 = [0x90, 0x90, 0xE8, 0x11, 0x22, 0x33, 0x44];
+        let ind_abs = [0x90, 0xFF, 0x15, 0xD8, 0x34, 0xA9, 0x00]; // call [00A934D8]
+        let call_esi = [0x90, 0x90, 0x90, 0x90, 0x90, 0xFF, 0xD6];
+        let call_disp8 = [0x90, 0x90, 0x90, 0x90, 0xFF, 0x50, 0x08]; // call [eax+8]
+        let call_sib8 = [0x90, 0x90, 0x90, 0xFF, 0x54, 0x24, 0x08]; // call [esp+8]
+        let call_ecx = [0x90, 0x90, 0x90, 0x90, 0x90, 0xFF, 0x11]; // call [ecx]
+        let text = *b"DINGPAD"; // the bogus caller from the first profile
+        let zeros = [0u8; 7];
+        for ok in [rel32, ind_abs, call_esi, call_disp8, call_sib8, call_ecx] {
+            assert!(preceded_by_call(&ok), "{ok:02X?}");
+        }
+        for bad in [text, zeros] {
+            assert!(!preceded_by_call(&bad), "{bad:02X?}");
         }
     }
 

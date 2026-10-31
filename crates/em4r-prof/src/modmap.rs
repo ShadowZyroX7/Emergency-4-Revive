@@ -1,7 +1,11 @@
-//! Address -> module lookup.
+//! Address -> module (and, for system DLLs, function name) lookup.
 
 use em4r_core::ffi::*;
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+
+pub type Exports = Arc<Vec<(u32, String)>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModEntry {
@@ -11,6 +15,20 @@ pub struct ModEntry {
     pub name: String,
     /// Code written by the game developers (callers worth attributing to).
     pub game_code: bool,
+    /// Named exports, only for non-game modules (to name Windows functions).
+    pub exports: Option<Exports>,
+}
+
+impl ModEntry {
+    /// `ntdll.dll!NtCreateFile` for system DLLs, otherwise just the module.
+    pub fn symbol(&self, addr: usize) -> String {
+        if let Some(ex) = &self.exports {
+            if let Some(name) = em4r_core::pe::symbolize(ex, (addr - self.base) as u32) {
+                return format!("{}!{}", self.name, name);
+            }
+        }
+        self.name.clone()
+    }
 }
 
 /// Modules in the game folder that are *not* game code.
@@ -28,6 +46,12 @@ pub struct ModuleMap {
     entries: Vec<ModEntry>,
 }
 
+/// Export tables survive between snapshots (keyed by module base).
+#[derive(Default)]
+pub struct ExportCache {
+    by_base: HashMap<usize, Exports>,
+}
+
 impl ModuleMap {
     pub fn from_entries(mut entries: Vec<ModEntry>) -> Self {
         entries.sort_by_key(|e| e.base);
@@ -35,7 +59,7 @@ impl ModuleMap {
     }
 
     /// Snapshot of all modules currently loaded in this process.
-    pub fn snapshot(game_dir: &Path) -> Self {
+    pub fn snapshot(game_dir: &Path, cache: &mut ExportCache) -> Self {
         let mut handles = vec![core::ptr::null_mut(); 1024];
         let mut needed = 0u32;
         // SAFETY: valid buffer and sizes.
@@ -74,13 +98,17 @@ impl ModuleMap {
                 (true, "dinput8.dll") => format!("{file} (EM4 Revive)"),
                 _ => file,
             };
+            let game_code = in_game_dir && !NOT_GAME_CODE.contains(&lower.as_str());
             let base = info.lpBaseOfDll as usize;
-            entries.push(ModEntry {
-                base,
-                end: base + info.SizeOfImage as usize,
-                name,
-                game_code: in_game_dir && !NOT_GAME_CODE.contains(&lower.as_str()),
+            let exports = (!game_code).then(|| {
+                cache
+                    .by_base
+                    // SAFETY: `m` is a loaded module.
+                    .entry(base)
+                    .or_insert_with(|| Arc::new(unsafe { em4r_core::pe::exports(m) }))
+                    .clone()
             });
+            entries.push(ModEntry { base, end: base + info.SizeOfImage as usize, name, game_code, exports });
         }
         Self::from_entries(entries)
     }
@@ -104,11 +132,15 @@ impl ModuleMap {
 mod tests {
     use super::*;
 
+    fn entry(base: usize, end: usize, name: &str, game_code: bool) -> ModEntry {
+        ModEntry { base, end, name: name.into(), game_code, exports: None }
+    }
+
     fn map() -> ModuleMap {
         ModuleMap::from_entries(vec![
-            ModEntry { base: 0x1000_0000, end: 0x1029_0000, name: "vision71.dll".into(), game_code: true },
-            ModEntry { base: 0x0040_0000, end: 0x00E0_0000, name: "Em4.exe".into(), game_code: true },
-            ModEntry { base: 0x7700_0000, end: 0x7710_0000, name: "ntdll.dll".into(), game_code: false },
+            entry(0x1000_0000, 0x1029_0000, "vision71.dll", true),
+            entry(0x0040_0000, 0x00E0_0000, "Em4.exe", true),
+            entry(0x7700_0000, 0x7710_0000, "ntdll.dll", false),
         ])
     }
 
@@ -124,12 +156,18 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_of_test_process_contains_ntdll() {
-        let m = ModuleMap::snapshot(Path::new(r"C:\does\not\exist"));
+    fn snapshot_names_ntdll_functions() {
+        let mut cache = ExportCache::default();
+        let m = ModuleMap::snapshot(Path::new(r"C:\does\not\exist"), &mut cache);
         assert!(m.len() > 3);
         let addr = em4r_core::util::loaded_proc("ntdll.dll", "NtClose").unwrap();
         let e = m.lookup(addr).unwrap();
         assert!(e.name.eq_ignore_ascii_case("ntdll.dll"));
         assert!(!e.game_code);
+        assert!(e.symbol(addr).ends_with("!NtClose"), "{}", e.symbol(addr));
+        // Second snapshot reuses the cached export tables.
+        let before = cache.by_base.len();
+        let _ = ModuleMap::snapshot(Path::new(r"C:\does\not\exist"), &mut cache);
+        assert_eq!(cache.by_base.len(), before);
     }
 }

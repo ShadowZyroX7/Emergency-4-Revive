@@ -103,6 +103,9 @@ fn init(module: HMODULE) {
             file_io: cfg.profiler.file_io,
         });
     }
+    // Functions resolved at runtime by name (e.g. Em4.exe's CreateFileW
+    // pointer) are redirected as well.
+    hooks.push(iat_hook!("kernel32.dll", "GetProcAddress", hk_get_proc_address, ORIG_GPA));
     // Modules loaded later (plugins) get patched as well.
     hooks.extend([
         iat_hook!("kernel32.dll", "LoadLibraryA", hk_load_library_a, ORIG_LLA),
@@ -141,6 +144,47 @@ fn report(installed: &[hook::Installed]) {
     for (func, modules) in by_func {
         info!("Hook {func:<28} in {}", modules.join(", "));
     }
+}
+
+// ---- GetProcAddress: redirect runtime-resolved functions ------------------
+
+static ORIG_GPA: AtomicUsize = AtomicUsize::new(0);
+static GPA_LOGGED: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+/// Compare a NUL-terminated C string with `s`.
+unsafe fn cstr_is(p: *const u8, s: &str) -> bool {
+    let b = s.as_bytes();
+    for (i, &c) in b.iter().enumerate() {
+        if *p.add(i) != c {
+            return false;
+        }
+    }
+    *p.add(b.len()) == 0
+}
+
+unsafe extern "system" fn hk_get_proc_address(module: HMODULE, name: *const u8) -> FARPROC {
+    let f: unsafe extern "system" fn(HMODULE, *const u8) -> FARPROC =
+        core::mem::transmute(ORIG_GPA.load(Ordering::Acquire));
+    let result = f(module, name);
+    // Ordinal lookups have a "name" below 0x10000.
+    if result.is_null() || (name as usize) >> 16 == 0 {
+        return result;
+    }
+    let Some(ctx) = CONTEXT.get() else { return result };
+    for h in &ctx.hooks {
+        // Only when we know the real function (so the detour can call it)
+        // and the caller asked for exactly that function.
+        if h.original() == result as usize && cstr_is(name, h.func) {
+            if let Ok(mut logged) = GPA_LOGGED.lock() {
+                if !logged.contains(&h.func) {
+                    logged.push(h.func);
+                    info!("GetProcAddress-Umleitung: {} (zur Laufzeit angefordert)", h.func);
+                }
+            }
+            return h.detour as FARPROC;
+        }
+    }
+    result
 }
 
 // ---- LoadLibrary hooks: patch modules loaded at runtime -------------------

@@ -9,7 +9,7 @@ use em4r_core::{iat_hook, info, warn};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 type SwapBuffersFn = unsafe extern "system" fn(em4r_core::ffi::HDC) -> em4r_core::ffi::BOOL;
@@ -74,7 +74,10 @@ fn open_csv(path: &Path) -> Option<BufWriter<File>> {
     match File::create(path) {
         Ok(f) => {
             let mut w = BufWriter::new(f);
-            let _ = writeln!(w, "zeit_s;fps_avg;fps_1pct_low;frametime_max_ms;draw_calls_avg;ram_privat_mb;ram_working_set_mb");
+            let _ = writeln!(
+                w,
+                "zeit_s;fps_avg;fps_1pct_low;frametime_max_ms;draw_calls_avg;ram_privat_mb;ram_working_set_mb;bildwechsel_wartezeit_ms"
+            );
             Some(w)
         }
         Err(e) => {
@@ -97,16 +100,26 @@ pub fn hooks() -> Vec<IatHook> {
     ]
 }
 
+/// Time spent inside the real SwapBuffers since the last stats interval.
+/// High values mean the CPU waits for the GPU (or VSync) at frame end.
+static SWAP_TICKS: AtomicU64 = AtomicU64::new(0);
+
+unsafe fn timed_swap(orig: &AtomicUsize, hdc: em4r_core::ffi::HDC) -> em4r_core::ffi::BOOL {
+    let f: SwapBuffersFn = core::mem::transmute(orig.load(Ordering::Acquire));
+    let t0 = qpc_now();
+    let r = f(hdc);
+    SWAP_TICKS.fetch_add((qpc_now() - t0) as u64, Ordering::Relaxed);
+    r
+}
+
 unsafe extern "system" fn hk_swap_buffers(hdc: em4r_core::ffi::HDC) -> em4r_core::ffi::BOOL {
     before_present();
-    let f: SwapBuffersFn = core::mem::transmute(ORIG_SWAP.load(Ordering::Acquire));
-    f(hdc)
+    timed_swap(&ORIG_SWAP, hdc)
 }
 
 unsafe extern "system" fn hk_wgl_swap_buffers(hdc: em4r_core::ffi::HDC) -> em4r_core::ffi::BOOL {
     before_present();
-    let f: SwapBuffersFn = core::mem::transmute(ORIG_WGL_SWAP.load(Ordering::Acquire));
-    f(hdc)
+    timed_swap(&ORIG_WGL_SWAP, hdc)
 }
 
 /// Called on the render thread right before every buffer swap.
@@ -148,9 +161,11 @@ fn before_present() {
 
 fn flush_interval(st: &mut State, now: i64) {
     let summary = stats::summarize(&st.frametimes, &st.draws);
+    let swap_ticks = SWAP_TICKS.swap(0, Ordering::Relaxed);
     st.frametimes.clear();
     st.draws.clear();
     let Some(s) = summary else { return };
+    let swap_ms = qpc_to_ms(swap_ticks as i64) / s.frames.max(1) as f64;
     st.intervals += 1;
     let (private_mb, ws_mb) = process_memory()
         .map(|(p, w)| (p as f64 / 1048576.0, w as f64 / 1048576.0))
@@ -159,8 +174,8 @@ fn flush_interval(st: &mut State, now: i64) {
     if let Some(w) = st.csv.as_mut() {
         // German Excel expects ';' as separator and ',' as decimal mark.
         let line = format!(
-            "{:.1};{:.1};{:.1};{:.2};{:.0};{:.0};{:.0}",
-            t, s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb, ws_mb
+            "{:.1};{:.1};{:.1};{:.2};{:.0};{:.0};{:.0};{:.2}",
+            t, s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb, ws_mb, swap_ms
         )
         .replace('.', ",");
         let _ = writeln!(w, "{line}");
@@ -168,9 +183,10 @@ fn flush_interval(st: &mut State, now: i64) {
     }
     // A log line every ~10 intervals keeps the log readable.
     if st.intervals % 10 == 1 {
+        let frame_ms = 1000.0 / s.fps_avg.max(0.001);
         info!(
-            "FPS {:.1} (1%-Low {:.1}, max Frametime {:.1} ms) | Draw-Calls {:.0} | RAM {:.0} MB",
-            s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb
+            "FPS {:.1} (1%-Low {:.1}, max Frametime {:.1} ms) | Draw-Calls {:.0} | RAM {:.0} MB | Bildwechsel (ReShade + Warten auf GPU/VSync) {:.1} ms von {:.1} ms pro Bild",
+            s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb, swap_ms, frame_ms
         );
     }
     if !st.memory_warned && private_mb as usize * 1048576 > MEMORY_WARN_BYTES {

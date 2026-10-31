@@ -73,12 +73,14 @@ static ORIG_CREATE_A: AtomicUsize = AtomicUsize::new(0);
 static ORIG_CREATE_W: AtomicUsize = AtomicUsize::new(0);
 static ORIG_READ: AtomicUsize = AtomicUsize::new(0);
 static ORIG_ATTR_A: AtomicUsize = AtomicUsize::new(0);
+static ORIG_ATTR_W: AtomicUsize = AtomicUsize::new(0);
 static ORIG_FIND_A: AtomicUsize = AtomicUsize::new(0);
 
 type CreateFileA = unsafe extern "system" fn(*const u8, u32, u32, *mut c_void, u32, u32, HANDLE) -> HANDLE;
 type CreateFileW = unsafe extern "system" fn(*const u16, u32, u32, *mut c_void, u32, u32, HANDLE) -> HANDLE;
 type ReadFile = unsafe extern "system" fn(HANDLE, *mut c_void, u32, *mut u32, *mut c_void) -> BOOL;
 type GetFileAttributesA = unsafe extern "system" fn(*const u8) -> u32;
+type GetFileAttributesW = unsafe extern "system" fn(*const u16) -> u32;
 type FindFirstFileA = unsafe extern "system" fn(*const u8, *mut c_void) -> HANDLE;
 
 pub fn init() {
@@ -93,8 +95,24 @@ pub fn hooks() -> Vec<IatHook> {
         iat_hook!("kernel32.dll", "CreateFileW", hk_create_file_w, ORIG_CREATE_W),
         iat_hook!("kernel32.dll", "ReadFile", hk_read_file, ORIG_READ),
         iat_hook!("kernel32.dll", "GetFileAttributesA", hk_get_file_attributes_a, ORIG_ATTR_A),
+        iat_hook!("kernel32.dll", "GetFileAttributesW", hk_get_file_attributes_w, ORIG_ATTR_W),
         iat_hook!("kernel32.dll", "FindFirstFileA", hk_find_first_file_a, ORIG_FIND_A),
+        // Handle values are reused by Windows: forget closed handles so reads
+        // are never attributed to an old file's extension.
+        iat_hook!("kernel32.dll", "CloseHandle", hk_close_handle, ORIG_CLOSE),
     ]
+}
+
+static ORIG_CLOSE: AtomicUsize = AtomicUsize::new(0);
+
+unsafe extern "system" fn hk_close_handle(h: HANDLE) -> BOOL {
+    if let Ok(mut g) = SHARED.lock() {
+        if let Some(sh) = g.as_mut() {
+            sh.handles.remove(&(h as usize));
+        }
+    }
+    let f: unsafe extern "system" fn(HANDLE) -> BOOL = core::mem::transmute(ORIG_CLOSE.load(Ordering::Acquire));
+    f(h)
 }
 
 /// Lower-case extension of a path, e.g. `.dds`; `(ohne)` if none.
@@ -205,6 +223,19 @@ unsafe extern "system" fn hk_read_file(h: HANDLE, buf: *mut c_void, n: u32, read
 
 unsafe extern "system" fn hk_get_file_attributes_a(name: *const u8) -> u32 {
     let f: GetFileAttributesA = core::mem::transmute(ORIG_ATTR_A.load(Ordering::Acquire));
+    let t0 = qpc_now();
+    let r = f(name);
+    let s = &STATS[phase_now() as usize];
+    s.attrs.fetch_add(1, Ordering::Relaxed);
+    s.attr_ticks.fetch_add((qpc_now() - t0) as u64, Ordering::Relaxed);
+    if r == INVALID_FILE_ATTRIBUTES {
+        s.attr_fail.fetch_add(1, Ordering::Relaxed);
+    }
+    r
+}
+
+unsafe extern "system" fn hk_get_file_attributes_w(name: *const u16) -> u32 {
+    let f: GetFileAttributesW = core::mem::transmute(ORIG_ATTR_W.load(Ordering::Acquire));
     let t0 = qpc_now();
     let r = f(name);
     let s = &STATS[phase_now() as usize];
