@@ -115,9 +115,10 @@ fn patch_game_modules() -> Vec<hook::Installed> {
 }
 
 fn report(installed: &[hook::Installed]) {
-    let mut by_func: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut by_func: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for i in installed {
-        by_func.entry(i.func).or_default().push(&i.module);
+        let label = if i.delayed { format!("{} (delay-load)", i.module) } else { i.module.clone() };
+        by_func.entry(i.func).or_default().push(label);
     }
     if by_func.is_empty() {
         em4r_core::warn!("Keine Hooks installiert – Spielmodule nicht gefunden?");
@@ -215,6 +216,16 @@ pub unsafe extern "system" fn DirectInput8Create(
     out: *mut *mut c_void,
     outer: *mut c_void,
 ) -> i32 {
+    // By now the game window exists and all engine DLLs are loaded: a good
+    // moment for a second pass over imports that could not be resolved
+    // during startup (cheap and idempotent).
+    static SECOND_PASS: std::sync::Once = std::sync::Once::new();
+    SECOND_PASS.call_once(|| {
+        let installed = patch_game_modules();
+        if !installed.is_empty() {
+            report(&installed);
+        }
+    });
     match real_direct_input8_create() {
         Some(f) => f(hinst, version, riid, out, outer),
         None => E_FAIL,

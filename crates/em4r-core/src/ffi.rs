@@ -108,6 +108,8 @@ extern "system" {
     pub fn GetModuleHandleW(name: *const u16) -> HMODULE;
     pub fn GetModuleFileNameW(module: HMODULE, buf: *mut u16, size: u32) -> u32;
     pub fn LoadLibraryW(name: *const u16) -> HMODULE;
+    pub fn LoadLibraryExW(name: *const u16, file: HANDLE, flags: u32) -> HMODULE;
+    pub fn FreeLibrary(module: HMODULE) -> BOOL;
     pub fn GetProcAddress(module: HMODULE, name: *const u8) -> FARPROC;
     pub fn DisableThreadLibraryCalls(module: HMODULE) -> BOOL;
     pub fn VirtualProtect(addr: *mut c_void, size: usize, new_protect: u32, old: *mut u32) -> BOOL;

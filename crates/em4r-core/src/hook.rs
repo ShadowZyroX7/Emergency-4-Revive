@@ -35,44 +35,72 @@ macro_rules! iat_hook {
 pub struct Installed {
     pub module: String,
     pub func: &'static str,
+    /// Patched in the delay-load table rather than the normal IAT.
+    pub delayed: bool,
 }
 
-/// Install `hooks` into `module`. Idempotent: slots that already point to
-/// our detour are skipped.
+/// Install `hooks` into `module`, covering both the normal and the
+/// delay-load import table. Idempotent: slots that already point to our
+/// detour are skipped.
 ///
 /// # Safety
 /// `module` must be a module mapped in this process.
 pub unsafe fn install_into(module: HMODULE, module_name: &str, hooks: &[IatHook]) -> Vec<Installed> {
     let mut done = Vec::new();
     for h in hooks {
-        let Some(slot) = pe::find_iat_slot(module, h.dll, h.func) else { continue };
-        let current = slot.read_volatile();
-        if current == h.detour {
-            continue;
-        }
-        // Publish the original *before* redirecting, so a concurrent call
-        // through the new slot always finds it.
-        match h.original.compare_exchange(0, current, Ordering::AcqRel, Ordering::Acquire) {
-            Ok(_) => {}
-            Err(existing) if existing == current => {}
-            Err(existing) => {
-                // Another module is bound to a different implementation
-                // (e.g. someone else hooked it). Chaining would be wrong
-                // for one of the two, so leave this module alone.
-                crate::warn!(
-                    "{}: {}!{} zeigt auf {:#x}, erwartet {:#x} – übersprungen",
-                    module_name, h.dll, h.func, current, existing
-                );
+        if let Some(slot) = pe::find_iat_slot(module, h.dll, h.func) {
+            // Normal import: the slot holds the real (bound) function.
+            let current = slot.read_volatile();
+            if install_slot(slot, current, h, module_name) {
+                done.push(Installed { module: module_name.to_string(), func: h.func, delayed: false });
+            }
+        } else if let Some(d) = pe::find_delay_iat_slot(module, h.dll, h.func) {
+            if d.slot.read_volatile() == h.detour {
                 continue;
             }
-        }
-        if pe::write_slot(slot, h.detour).is_some() {
-            done.push(Installed { module: module_name.to_string(), func: h.func });
-        } else {
-            crate::error!("{}: Konnte {}!{} nicht patchen", module_name, h.dll, h.func);
+            // Delay-load import: the slot may still hold the resolver stub,
+            // which would overwrite our hook on first call. Resolve the real
+            // function the way the delay-load helper would. If that DLL is
+            // not loaded yet, try again on a later pass.
+            let Some(real) = crate::util::loaded_proc(&d.dll_name, h.func) else {
+                crate::debug!("{module_name}: {} noch nicht geladen, {} folgt später", d.dll_name, h.func);
+                continue;
+            };
+            if install_slot(d.slot, real, h, module_name) {
+                done.push(Installed { module: module_name.to_string(), func: h.func, delayed: true });
+            }
         }
     }
     done
+}
+
+/// Point `slot` at the detour, recording `real` as the original function.
+unsafe fn install_slot(slot: *mut usize, real: usize, h: &IatHook, module_name: &str) -> bool {
+    if slot.read_volatile() == h.detour {
+        return false;
+    }
+    // Publish the original *before* redirecting, so a concurrent call
+    // through the new slot always finds it.
+    match h.original.compare_exchange(0, real, Ordering::AcqRel, Ordering::Acquire) {
+        Ok(_) => {}
+        Err(existing) if existing == real => {}
+        Err(existing) => {
+            // Another module is bound to a different implementation
+            // (e.g. someone else hooked it). Chaining would be wrong for
+            // one of the two, so leave this module alone.
+            crate::warn!(
+                "{}: {}!{} zeigt auf {:#x}, erwartet {:#x} – übersprungen",
+                module_name, h.dll, h.func, real, existing
+            );
+            return false;
+        }
+    }
+    if pe::write_slot(slot, h.detour).is_some() {
+        true
+    } else {
+        crate::error!("{}: Konnte {}!{} nicht patchen", module_name, h.dll, h.func);
+        false
+    }
 }
 
 /// All loaded modules whose file lives inside `game_dir`, except those in

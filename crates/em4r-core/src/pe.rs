@@ -41,8 +41,13 @@ unsafe fn cstr_eq(addr: usize, s: &str, ignore_case: bool) -> bool {
     *((addr + bytes.len()) as *const u8) == 0
 }
 
-/// Base address of the import directory, if the module has one.
-unsafe fn import_directory(base: usize) -> Option<usize> {
+const DIR_IMPORT: usize = 1;
+const DIR_DELAY_IMPORT: usize = 13;
+const DELAY_DESCRIPTOR_SIZE: usize = 32;
+const DELAY_ATTR_RVA: u32 = 1;
+
+/// Address of data directory `index`, if the module has it.
+unsafe fn data_directory(base: usize, index: usize) -> Option<usize> {
     if base == 0 || rd16(base) != IMAGE_DOS_SIGNATURE {
         return None;
     }
@@ -56,9 +61,72 @@ unsafe fn import_directory(base: usize) -> Option<usize> {
         PE32PLUS_MAGIC if size_of::<usize>() == 8 => opt + 112,
         _ => return None,
     };
-    // Data directory #1 = imports.
-    let rva = rd32(data_dirs + 8) as usize;
+    let rva = rd32(data_dirs + index * 8) as usize;
     (rva != 0).then_some(base + rva)
+}
+
+unsafe fn import_directory(base: usize) -> Option<usize> {
+    data_directory(base, DIR_IMPORT)
+}
+
+/// Index of `func` in a name table (INT) at `int_addr`, if present.
+unsafe fn find_in_name_table(base: usize, int_addr: usize, func: &str) -> Option<usize> {
+    let ts = size_of::<usize>();
+    let ordinal_flag = 1usize << (ts * 8 - 1);
+    let mut i = 0usize;
+    loop {
+        let thunk = rdusize(int_addr + i * ts);
+        if thunk == 0 {
+            return None;
+        }
+        if thunk & ordinal_flag == 0 && cstr_eq(base + (thunk & !ordinal_flag) + 2, func, false) {
+            return Some(i);
+        }
+        i += 1;
+    }
+}
+
+/// A slot in the *delay-load* IAT, plus the DLL name exactly as the module
+/// names it (needed to resolve the real function the way the delay-load
+/// helper would).
+pub struct DelaySlot {
+    pub slot: *mut usize,
+    pub dll_name: String,
+}
+
+/// Find the delay-load IAT slot through which `module` calls `dll!func`.
+///
+/// Until first use, such a slot points to a stub that resolves the import
+/// and then *overwrites the slot*. A hook must therefore never treat the
+/// slot's current value as the original function – resolve it instead.
+///
+/// # Safety
+/// `module` must be a module mapped in this process.
+pub unsafe fn find_delay_iat_slot(module: HMODULE, dll: &str, func: &str) -> Option<DelaySlot> {
+    let base = module as usize;
+    let mut desc = data_directory(base, DIR_DELAY_IMPORT)?;
+    loop {
+        let attrs = rd32(desc);
+        let name = rd32(desc + 4) as usize;
+        let iat = rd32(desc + 12) as usize;
+        let int = rd32(desc + 16) as usize;
+        if name == 0 {
+            return None;
+        }
+        // Old VC6-style descriptors store VAs instead of RVAs; not supported.
+        if attrs & DELAY_ATTR_RVA != 0 && iat != 0 && int != 0 && cstr_eq(base + name, dll, true) {
+            if let Some(i) = find_in_name_table(base, base + int, func) {
+                let mut dll_name = String::new();
+                let mut p = base + name;
+                while *(p as *const u8) != 0 && dll_name.len() < 260 {
+                    dll_name.push(*(p as *const u8) as char);
+                    p += 1;
+                }
+                return Some(DelaySlot { slot: (base + iat + i * size_of::<usize>()) as *mut usize, dll_name });
+            }
+        }
+        desc += DELAY_DESCRIPTOR_SIZE;
+    }
 }
 
 /// Find the IAT slot through which `module` calls `dll!func`.
@@ -161,6 +229,31 @@ mod tests {
             assert!(find_iat_slot(exe, "kernel32.dll", "NoSuchFunction").is_none());
             assert!(find_iat_slot(exe, "nosuch.dll", "GetCurrentProcessId").is_none());
             assert!(find_iat_slot(core::ptr::null_mut(), "kernel32.dll", "x").is_none());
+        }
+    }
+
+    /// Uses the real vBase71.dll of the installed game (skipped if absent).
+    /// Mapped with DONT_RESOLVE_DLL_REFERENCES: no imports, no DllMain.
+    #[test]
+    fn finds_delay_imports_of_real_vbase71() {
+        let path = r"C:\SteamLibrary\steamapps\common\EMERGENCY 4 Deluxe\vBase71.dll";
+        if !std::path::Path::new(path).exists() {
+            eprintln!("vBase71.dll nicht vorhanden – Test übersprungen");
+            return;
+        }
+        unsafe {
+            let m = crate::ffi::LoadLibraryExW(crate::util::wide(path).as_ptr(), core::ptr::null_mut(), 0x1);
+            assert!(!m.is_null());
+            // These live only in the delay-load table.
+            assert!(find_iat_slot(m, "gdi32.dll", "SwapBuffers").is_none());
+            for f in ["SwapBuffers", "ChoosePixelFormat", "SetPixelFormat"] {
+                let d = find_delay_iat_slot(m, "gdi32.dll", f).unwrap_or_else(|| panic!("{f} fehlt"));
+                assert!(d.dll_name.eq_ignore_ascii_case("gdi32.dll"));
+                assert!(!d.slot.is_null());
+            }
+            assert!(find_delay_iat_slot(m, "opengl32.dll", "wglGetProcAddress").is_some());
+            assert!(find_delay_iat_slot(m, "gdi32.dll", "NoSuchFunction").is_none());
+            crate::ffi::FreeLibrary(m);
         }
     }
 
