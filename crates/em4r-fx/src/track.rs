@@ -13,6 +13,16 @@ pub fn is_perspective(m: &[f32; 16]) -> bool {
     m[15] == 0.0 && m[11] != 0.0
 }
 
+/// Near/far and half-angle tangents from a (symmetric) perspective matrix.
+pub fn camera_from_matrix(m: &[f32; 16]) -> Option<crate::Camera> {
+    if m[0] == 0.0 || m[5] == 0.0 || m[10] == 1.0 || m[10] == -1.0 {
+        return None;
+    }
+    let near = (m[14] / (m[10] - 1.0)).abs();
+    let far = (m[14] / (m[10] + 1.0)).abs();
+    (near > 0.0 && far > near).then(|| crate::Camera { near, far, tan_x: 1.0 / m[0], tan_y: 1.0 / m[5] })
+}
+
 macro_rules! tracked_module {
     ($modname:ident) => {
         pub mod $modname {
@@ -27,8 +37,13 @@ macro_rules! tracked_module {
                 let o: unsafe extern "system" fn(f64, f64, f64, f64, f64, f64) =
                     core::mem::transmute(O_FRUSTUM.load(Ordering::Relaxed));
                 o(l, r, b, t, n, f);
-                if MATRIX_MODE.load(Ordering::Relaxed) == GL_PROJECTION {
-                    crate::on_perspective(n);
+                if MATRIX_MODE.load(Ordering::Relaxed) == GL_PROJECTION && n > 0.0 {
+                    crate::on_perspective(crate::Camera {
+                        near: n as f32,
+                        far: f as f32,
+                        tan_x: ((r - l) / (2.0 * n)) as f32,
+                        tan_y: ((t - b) / (2.0 * n)) as f32,
+                    });
                 }
             }
             unsafe extern "system" fn load_matrix(m: *const f32) {
@@ -37,9 +52,9 @@ macro_rules! tracked_module {
                 if MATRIX_MODE.load(Ordering::Relaxed) == GL_PROJECTION && !m.is_null() {
                     let mm = &*(m as *const [f32; 16]);
                     if is_perspective(mm) {
-                        // near plane from the matrix: n = m[14] / (m[10] - 1)
-                        let near = if mm[10] != 1.0 { (mm[14] / (mm[10] - 1.0)) as f64 } else { 0.0 };
-                        crate::on_perspective(near.abs());
+                        if let Some(cam) = camera_from_matrix(mm) {
+                            crate::on_perspective(cam);
+                        }
                     } else {
                         crate::on_projection_2d();
                     }
@@ -101,8 +116,18 @@ mod tests {
         o[10] = 1.0;
         o[15] = 1.0;
         assert!(!is_perspective(&o));
-        // near = m14 / (m10 - 1)
-        let near = p[14] / (p[10] - 1.0);
-        assert!((near - 100.0).abs() < 1.0, "{near}");
+        // Matrix of glFrustum(near 100, far 32000), 90° fov.
+        let (n, f) = (100.0f32, 32000.0f32);
+        let mut q = [0.0f32; 16];
+        q[0] = 1.0;
+        q[5] = 1.0;
+        q[10] = -(f + n) / (f - n);
+        q[11] = -1.0;
+        q[14] = -2.0 * f * n / (f - n);
+        let cam = camera_from_matrix(&q).unwrap();
+        assert!((cam.near - 100.0).abs() < 0.5, "{}", cam.near);
+        assert!((cam.far - 32000.0).abs() < 200.0, "{}", cam.far);
+        assert!((cam.tan_x - 1.0).abs() < 1e-6);
+        assert!(camera_from_matrix(&[0.0; 16]).is_none());
     }
 }

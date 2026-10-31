@@ -68,6 +68,21 @@ impl ReviveConfig {
         self.set("gl", "force_trilinear", value(c.gl.force_trilinear));
         self.set("crash", "minidump", value(c.crash.minidump));
         self.set("profiler", "enabled", value(c.profiler.enabled));
+        let r2 = |v: f32| ((v as f64) * 100.0).round() / 100.0;
+        self.set("fx", "enabled", value(c.fx.enabled));
+        self.set("fx", "sharpen", value(r2(c.fx.sharpen)));
+        self.set("fx", "contrast", value(r2(c.fx.contrast)));
+        self.set("fx", "saturation", value(r2(c.fx.saturation)));
+        self.set("fx", "vibrance", value(r2(c.fx.vibrance)));
+        self.set("fx", "warmth", value(r2(c.fx.warmth)));
+        self.set("fx", "filmic", value(r2(c.fx.filmic)));
+        self.set("fx", "ssao", value(c.fx.ssao));
+        self.set("fx", "ssao_strength", value(r2(c.fx.ssao_strength)));
+        self.set("fx", "ssao_radius", value(r2(c.fx.ssao_radius)));
+        self.set("fx", "dof", value(c.fx.dof));
+        self.set("fx", "dof_strength", value(r2(c.fx.dof_strength)));
+        self.set("fx", "dof_start", value(r2(c.fx.dof_start)));
+        self.set("fx", "dof_end", value(r2(c.fx.dof_end)));
         let text = self.doc.to_string();
         // Never write something the mod could not read back.
         Config::parse(&text).map_err(|e| format!("interner Fehler, nicht gespeichert: {e}"))?;
@@ -123,6 +138,14 @@ impl ReviveConfig {
         }
         c.perf.missing_file_cache = true;
         c.game.fast_logfile = true;
+        let d = em4r_core::config::Fx::default();
+        match p {
+            Preset::Leistung => c.fx.enabled = false,
+            Preset::Ausgewogen => c.fx = em4r_core::config::Fx { enabled: true, capture: c.fx.capture, ..d },
+            Preset::Qualitaet => {
+                c.fx = em4r_core::config::Fx { enabled: true, capture: c.fx.capture, sharpen: 0.65, ..d }
+            }
+        }
     }
 }
 
@@ -178,8 +201,14 @@ mod tests {
         assert_eq!(rc.cfg.gl.anisotropy, 4);
         rc.apply_preset(Preset::Qualitaet);
         assert_eq!(rc.cfg.perf.vsync, 1);
+        assert!(rc.cfg.fx.enabled);
+        rc.cfg.fx.contrast = 1.234;
         rc.save().unwrap();
         assert!(p.exists());
+        // fx values survive a save/load round trip (rounded to 2 decimals).
+        let back = ReviveConfig::load(&p).unwrap();
+        assert!(back.cfg.fx.enabled);
+        assert!((back.cfg.fx.contrast - 1.23).abs() < 1e-6);
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 }

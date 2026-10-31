@@ -75,6 +75,19 @@ vibrance = 0.15
 warmth = 0.10
 # Filmische Kontrastkurve (weiche Lichter und Schatten): 0 = aus, 1 = stark.
 filmic = 0.25
+# Umgebungsverdeckung (SSAO): weiche Schatten in Ecken, unter Fahrzeugen, an Wänden.
+ssao = true
+# Stärke: 0 = aus, 1 = normal, 2 = kräftig.
+ssao_strength = 1.0
+# Wirkradius in Spieleinheiten (größer = weichere, weitere Schatten).
+ssao_radius = 60.0
+# Tiefenunschärfe: weit entfernte Bereiche werden weicher.
+dof = true
+# Stärke: 0 = aus, 1 = stark.
+dof_strength = 0.5
+# Ab dieser Entfernung beginnt die Unschärfe, bei dof_end ist sie voll.
+dof_start = 9000.0
+dof_end = 22000.0
 
 [crash]
 # Bei einem Absturz eine Minidump-Datei (em4revive_crash_*.dmp) schreiben.

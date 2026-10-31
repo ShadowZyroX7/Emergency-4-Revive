@@ -107,6 +107,13 @@ fn init(module: HMODULE) {
             vibrance: cfg.fx.vibrance,
             warmth: cfg.fx.warmth,
             filmic: cfg.fx.filmic,
+            ssao: cfg.fx.ssao,
+            ssao_strength: cfg.fx.ssao_strength,
+            ssao_radius: cfg.fx.ssao_radius,
+            dof: cfg.fx.dof,
+            dof_strength: cfg.fx.dof_strength,
+            dof_start: cfg.fx.dof_start,
+            dof_end: cfg.fx.dof_end,
         },
     );
     em4r_gl::configure(&cfg);

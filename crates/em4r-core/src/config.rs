@@ -31,11 +31,34 @@ pub struct Fx {
     pub vibrance: f32,
     pub warmth: f32,
     pub filmic: f32,
+    pub ssao: bool,
+    pub ssao_strength: f32,
+    pub ssao_radius: f32,
+    pub dof: bool,
+    pub dof_strength: f32,
+    pub dof_start: f32,
+    pub dof_end: f32,
 }
 
 impl Default for Fx {
     fn default() -> Self {
-        Self { enabled: false, capture: false, sharpen: 0.5, contrast: 1.06, saturation: 1.10, vibrance: 0.15, warmth: 0.10, filmic: 0.25 }
+        Self {
+            enabled: false,
+            capture: false,
+            sharpen: 0.5,
+            contrast: 1.06,
+            saturation: 1.10,
+            vibrance: 0.15,
+            warmth: 0.10,
+            filmic: 0.25,
+            ssao: true,
+            ssao_strength: 1.0,
+            ssao_radius: 60.0,
+            dof: true,
+            dof_strength: 0.5,
+            dof_start: 9000.0,
+            dof_end: 22000.0,
+        }
     }
 }
 
@@ -211,6 +234,11 @@ impl Config {
         clamp(&mut fx.vibrance, -1.0, 1.0, d.vibrance, "vibrance", &mut notes);
         clamp(&mut fx.warmth, -1.0, 1.0, d.warmth, "warmth", &mut notes);
         clamp(&mut fx.filmic, 0.0, 1.0, d.filmic, "filmic", &mut notes);
+        clamp(&mut fx.ssao_strength, 0.0, 2.0, d.ssao_strength, "ssao_strength", &mut notes);
+        clamp(&mut fx.ssao_radius, 5.0, 500.0, d.ssao_radius, "ssao_radius", &mut notes);
+        clamp(&mut fx.dof_strength, 0.0, 1.0, d.dof_strength, "dof_strength", &mut notes);
+        clamp(&mut fx.dof_start, 100.0, 32000.0, d.dof_start, "dof_start", &mut notes);
+        clamp(&mut fx.dof_end, 100.0, 32000.0, d.dof_end, "dof_end", &mut notes);
         let pr = &mut self.profiler;
         if !(100..=2000).contains(&pr.sample_hz) {
             notes.push(format!("profiler.sample_hz={} -> 1000", pr.sample_hz));

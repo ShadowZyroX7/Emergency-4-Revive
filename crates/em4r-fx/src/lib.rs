@@ -30,11 +30,20 @@ pub struct Params {
     pub vibrance: f32,
     pub warmth: f32,
     pub filmic: f32,
+    pub ssao: bool,
+    pub ssao_strength: f32,
+    pub ssao_radius: f32,
+    pub dof: bool,
+    pub dof_strength: f32,
+    pub dof_start: f32,
+    pub dof_end: f32,
 }
 
 static PARAMS: OnceLock<Params> = OnceLock::new();
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static FAILED: AtomicBool = AtomicBool::new(false);
+/// Cleared if the depth buffer cannot be copied (then no SSAO/DOF).
+static DEPTH_OK: AtomicBool = AtomicBool::new(true);
 
 // Per-frame state (render thread).
 static MAIN_DC: AtomicUsize = AtomicUsize::new(0);
@@ -103,12 +112,27 @@ fn in_main_context() -> bool {
     cur == 0 || cur == MAIN_DC.load(Ordering::Relaxed)
 }
 
+/// Projection parameters of the world camera.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Camera {
+    pub near: f32,
+    pub far: f32,
+    /// tan(half horizontal / vertical field of view)
+    pub tan_x: f32,
+    pub tan_y: f32,
+}
+
+static CAMERA: Mutex<Camera> = Mutex::new(Camera { near: 100.0, far: 32000.0, tan_x: 0.7, tan_y: 0.4 });
+
 /// Called by the tracking hooks.
-pub(crate) fn on_perspective(near: f64) {
+pub(crate) fn on_perspective(cam: Camera) {
     PERSPECTIVE.store(true, Ordering::Relaxed);
     // The world camera (near 100) – not the shadow camera (near 6000).
-    if near < 1000.0 && in_main_context() {
+    if cam.near < 1000.0 && in_main_context() {
         SCENE_SEEN.store(true, Ordering::Relaxed);
+        if let Ok(mut c) = CAMERA.try_lock() {
+            *c = cam;
+        }
     }
 }
 
@@ -149,21 +173,20 @@ static PIPE: Mutex<Option<Pipeline>> = Mutex::new(None);
 struct Pipeline {
     w: i32,
     h: i32,
+    /// Scene copy: colour + depth/stencil textures.
     fbo: u32,
     color: u32,
-    program: u32,
-    u: Uniforms,
+    depth: u32,
+    /// SSAO target.
+    ao_fbo: u32,
+    ao: u32,
+    final_prog: u32,
+    ao_prog: u32,
 }
 
-struct Uniforms {
-    color_tex: i32,
-    texel: i32,
-    sharpen: i32,
-    contrast: i32,
-    saturation: i32,
-    vibrance: i32,
-    warmth: i32,
-    filmic: i32,
+unsafe fn uniform(g: &Gl, prog: u32, name: &str) -> i32 {
+    let c = format!("{name}\0");
+    (g.glGetUniformLocation)(prog, c.as_ptr())
 }
 
 unsafe fn compile(g: &Gl, kind: u32, src: &str) -> Result<u32, String> {
@@ -211,36 +234,60 @@ unsafe fn texture(g: &Gl, w: i32, h: i32) -> u32 {
     t
 }
 
+/// Depth/stencil texture matching the window's D24S8 depth buffer
+/// (glBlitFramebuffer needs identical depth formats).
+unsafe fn depth_texture(g: &Gl, w: i32, h: i32) -> u32 {
+    let mut t = 0;
+    (g.glGenTextures)(1, &mut t);
+    (g.glBindTexture)(GL_TEXTURE_2D, t);
+    (g.glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    (g.glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    (g.glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    (g.glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    (g.glTexParameteri)(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+    (g.glTexImage2D)(
+        GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8 as i32, w, h, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, core::ptr::null(),
+    );
+    t
+}
+
+unsafe fn framebuffer(g: &Gl, color: u32, depth: Option<u32>) -> Result<u32, String> {
+    let mut fbo = 0;
+    (g.glGenFramebuffers)(1, &mut fbo);
+    (g.glBindFramebuffer)(GL_FRAMEBUFFER, fbo);
+    (g.glFramebufferTexture2D)(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
+    if let Some(d) = depth {
+        (g.glFramebufferTexture2D)(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, d, 0);
+    }
+    let status = (g.glCheckFramebufferStatus)(GL_FRAMEBUFFER);
+    (g.glBindFramebuffer)(GL_FRAMEBUFFER, 0);
+    if status != GL_FRAMEBUFFER_COMPLETE {
+        return Err(format!("Framebuffer unvollständig (0x{status:X})"));
+    }
+    Ok(fbo)
+}
+
 impl Pipeline {
     unsafe fn create(g: &Gl, w: i32, h: i32) -> Result<Pipeline, String> {
-        let program = link(g, shaders::VERTEX, shaders::FINAL)?;
-        let loc = |n: &str| {
-            let c = format!("{n}\0");
-            (g.glGetUniformLocation)(program, c.as_ptr())
-        };
-        let u = Uniforms {
-            color_tex: loc("colorTex"),
-            texel: loc("texel"),
-            sharpen: loc("sharpen"),
-            contrast: loc("contrast"),
-            saturation: loc("saturation"),
-            vibrance: loc("vibrance"),
-            warmth: loc("warmth"),
-            filmic: loc("filmic"),
-        };
+        let final_prog = link(g, shaders::VERTEX, &shaders::final_pass())?;
+        let ao_prog = link(g, shaders::VERTEX, &shaders::ssao())?;
         let color = texture(g, w, h);
-        let mut fbo = 0;
-        (g.glGenFramebuffers)(1, &mut fbo);
-        (g.glBindFramebuffer)(GL_FRAMEBUFFER, fbo);
-        (g.glFramebufferTexture2D)(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color, 0);
-        let status = (g.glCheckFramebufferStatus)(GL_FRAMEBUFFER);
-        (g.glBindFramebuffer)(GL_FRAMEBUFFER, 0);
-        if status != GL_FRAMEBUFFER_COMPLETE {
-            return Err(format!("Framebuffer unvollständig (0x{status:X})"));
-        }
+        let depth = depth_texture(g, w, h);
+        let fbo = framebuffer(g, color, Some(depth))?;
+        let ao = texture(g, w, h);
+        let ao_fbo = framebuffer(g, ao, None)?;
         info!("Grafik-Effekte bereit ({w}x{h})");
-        Ok(Pipeline { w, h, fbo, color, program, u })
+        Ok(Pipeline { w, h, fbo, color, depth, ao_fbo, ao, final_prog, ao_prog })
     }
+}
+
+unsafe fn fullscreen_quad(g: &Gl) {
+    (g.glBegin)(GL_QUADS);
+    (g.glVertex2f)(-1.0, -1.0);
+    (g.glVertex2f)(1.0, -1.0);
+    (g.glVertex2f)(1.0, 1.0);
+    (g.glVertex2f)(-1.0, 1.0);
+    (g.glEnd)();
 }
 
 #[cfg(test)]
@@ -283,8 +330,13 @@ mod tests {
             let g = Gl::load().expect("GL-Funktionen");
             let _ = (g.glGetError)();
             let pl = Pipeline::create(&g, 256, 256).expect("Pipeline");
-            assert!(pl.program != 0 && pl.fbo != 0 && pl.color != 0);
-            assert!(pl.u.color_tex >= 0 && pl.u.sharpen >= 0, "Uniforms fehlen");
+            assert!(pl.final_prog != 0 && pl.ao_prog != 0 && pl.fbo != 0 && pl.ao_fbo != 0);
+            for name in ["colorTex", "depthTex", "aoTex", "sharpen", "aoStrength", "dofRange", "nearFar"] {
+                assert!(uniform(&g, pl.final_prog, name) >= 0, "Uniform {name} fehlt im Abschluss-Shader");
+            }
+            for name in ["depthTex", "radius", "focal", "tanHalf"] {
+                assert!(uniform(&g, pl.ao_prog, name) >= 0, "Uniform {name} fehlt im SSAO-Shader");
+            }
             assert_eq!((g.glGetError)(), GL_NO_ERROR);
 
             make(core::ptr::null_mut(), core::ptr::null_mut());
@@ -331,10 +383,27 @@ unsafe fn run() {
     }
     let pl = guard.as_ref().expect("pipeline");
 
-    // 1) Resolve the back buffer (MSAA) into our texture.
+    // 1) Resolve the back buffer (MSAA) into our textures: colour always,
+    //    depth too when SSAO/DOF need it (and the formats are compatible).
+    let want_depth = (p.ssao || p.dof) && DEPTH_OK.load(Ordering::Relaxed);
     (g.glBindFramebuffer)(GL_READ_FRAMEBUFFER, prev_read as u32);
     (g.glBindFramebuffer)(GL_DRAW_FRAMEBUFFER, pl.fbo);
-    (g.glBlitFramebuffer)(vp[0], vp[1], vp[0] + w, vp[1] + h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST as u32);
+    let blit = |bits: u32| {
+        (g.glBlitFramebuffer)(vp[0], vp[1], vp[0] + w, vp[1] + h, 0, 0, w, h, bits, GL_NEAREST as u32)
+    };
+    if want_depth {
+        blit(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        let e = (g.glGetError)();
+        if e != GL_NO_ERROR {
+            DEPTH_OK.store(false, Ordering::Relaxed);
+            warn!("Tiefenpuffer nicht kopierbar (0x{e:X}) – SSAO und Tiefenunschärfe aus, Farbe/Schärfe bleiben");
+            blit(GL_COLOR_BUFFER_BIT);
+        }
+    } else {
+        blit(GL_COLOR_BUFFER_BIT);
+    }
+    let depth_ok = want_depth && DEPTH_OK.load(Ordering::Relaxed);
+    let cam = CAMERA.lock().map(|c| *c).unwrap_or(Camera { near: 100.0, far: 32000.0, tan_x: 0.7, tan_y: 0.4 });
 
     // Verification screenshot (once, after 20 s of uninterrupted play).
     let capture = if em4r_core::counters::render_streak_ms() > 20_000.0 {
@@ -350,31 +419,61 @@ unsafe fn run() {
         (g.glBindFramebuffer)(GL_READ_FRAMEBUFFER, prev_read as u32);
     }
 
-    // 2) Draw it back through the effect shader.
-    (g.glBindFramebuffer)(GL_DRAW_FRAMEBUFFER, prev_draw as u32);
+    // Common state for our full-screen passes.
     for cap in [GL_DEPTH_TEST, GL_BLEND, GL_ALPHA_TEST, GL_CULL_FACE, GL_SCISSOR_TEST, GL_STENCIL_TEST, GL_FOG, GL_LIGHTING] {
         (g.glDisable)(cap);
     }
     (g.glDepthMask)(0);
     (g.glColorMask)(1, 1, 1, 1);
+    let texel = (1.0 / w as f32, 1.0 / h as f32);
+    // Focal length in pixels per world unit at distance 1 (vertical).
+    let focal = 0.5 * h as f32 / cam.tan_y.max(1e-3);
+    let set_depth_uniforms = |prog: u32| {
+        (g.glUniform1i)(uniform(g, prog, "depthTex"), 1);
+        (g.glUniform2f)(uniform(g, prog, "nearFar"), cam.near, cam.far);
+        (g.glUniform2f)(uniform(g, prog, "tanHalf"), cam.tan_x, cam.tan_y);
+        (g.glUniform2f)(uniform(g, prog, "texel"), texel.0, texel.1);
+    };
+    (g.glActiveTexture)(GL_TEXTURE0 + 1);
+    (g.glBindTexture)(GL_TEXTURE_2D, pl.depth);
+
+    // 2) SSAO into its own texture.
+    let ssao = p.ssao && depth_ok;
+    if ssao {
+        (g.glBindFramebuffer)(GL_DRAW_FRAMEBUFFER, pl.ao_fbo);
+        (g.glViewport)(0, 0, w, h);
+        (g.glUseProgram)(pl.ao_prog);
+        set_depth_uniforms(pl.ao_prog);
+        (g.glUniform1f)(uniform(g, pl.ao_prog, "radius"), p.ssao_radius);
+        (g.glUniform1f)(uniform(g, pl.ao_prog, "focal"), focal);
+        fullscreen_quad(g);
+    }
+
+    // 3) Final pass back into the game's frame.
+    (g.glBindFramebuffer)(GL_DRAW_FRAMEBUFFER, prev_draw as u32);
     (g.glViewport)(vp[0], vp[1], w, h);
     (g.glActiveTexture)(GL_TEXTURE0);
     (g.glBindTexture)(GL_TEXTURE_2D, pl.color);
-    (g.glUseProgram)(pl.program);
-    (g.glUniform1i)(pl.u.color_tex, 0);
-    (g.glUniform2f)(pl.u.texel, 1.0 / w as f32, 1.0 / h as f32);
-    (g.glUniform1f)(pl.u.sharpen, p.sharpen);
-    (g.glUniform1f)(pl.u.contrast, p.contrast);
-    (g.glUniform1f)(pl.u.saturation, p.saturation);
-    (g.glUniform1f)(pl.u.vibrance, p.vibrance);
-    (g.glUniform1f)(pl.u.warmth, p.warmth);
-    (g.glUniform1f)(pl.u.filmic, p.filmic);
-    (g.glBegin)(GL_QUADS);
-    (g.glVertex2f)(-1.0, -1.0);
-    (g.glVertex2f)(1.0, -1.0);
-    (g.glVertex2f)(1.0, 1.0);
-    (g.glVertex2f)(-1.0, 1.0);
-    (g.glEnd)();
+    (g.glActiveTexture)(GL_TEXTURE0 + 2);
+    (g.glBindTexture)(GL_TEXTURE_2D, pl.ao);
+    let fp = pl.final_prog;
+    (g.glUseProgram)(fp);
+    set_depth_uniforms(fp);
+    let u1 = |name: &str, v: f32| (g.glUniform1f)(uniform(g, fp, name), v);
+    (g.glUniform1i)(uniform(g, fp, "colorTex"), 0);
+    (g.glUniform1i)(uniform(g, fp, "aoTex"), 2);
+    u1("useAO", if ssao { 1.0 } else { 0.0 });
+    u1("aoStrength", p.ssao_strength);
+    u1("useDOF", if p.dof && depth_ok { 1.0 } else { 0.0 });
+    u1("dofStrength", p.dof_strength);
+    (g.glUniform2f)(uniform(g, fp, "dofRange"), p.dof_start, p.dof_end.max(p.dof_start + 1.0));
+    u1("sharpen", p.sharpen);
+    u1("contrast", p.contrast);
+    u1("saturation", p.saturation);
+    u1("vibrance", p.vibrance);
+    u1("warmth", p.warmth);
+    u1("filmic", p.filmic);
+    fullscreen_quad(g);
 
     if let Some(dir) = &capture {
         let mut px = vec![0u8; (w * h * 4) as usize];
@@ -397,6 +496,15 @@ unsafe fn run() {
         return fail(format!("OpenGL-Fehler 0x{err:X} im Effekt-Durchgang"));
     }
     if n == 0 {
-        info!("Grafik-Effekte aktiv (Schärfe {:.2}, Kontrast {:.2}, Sättigung {:.2})", p.sharpen, p.contrast, p.saturation);
+        info!(
+            "Grafik-Effekte aktiv (Schärfe {:.2}, Kontrast {:.2}, Sättigung {:.2}, SSAO {}, Tiefenunschärfe {}; Kamera near {:.0} far {:.0})",
+            p.sharpen,
+            p.contrast,
+            p.saturation,
+            if ssao { "an" } else { "aus" },
+            if p.dof && depth_ok { "an" } else { "aus" },
+            cam.near,
+            cam.far
+        );
     }
 }

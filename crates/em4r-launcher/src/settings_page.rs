@@ -177,6 +177,35 @@ impl SettingsPage {
             }
 
             ui.add_space(8.0);
+            ui.label(RichText::new("Effekte (nur 3D-Welt, Menüs bleiben unverändert)").strong());
+            ui.checkbox(&mut r.cfg.fx.enabled, "Eigene Grafik-Effekte aktiv");
+            ui.add_enabled_ui(r.cfg.fx.enabled, |ui| {
+                let fx = &mut r.cfg.fx;
+                ui.add(egui::Slider::new(&mut fx.sharpen, 0.0..=1.0).text("Nachschärfen"));
+                ui.add(egui::Slider::new(&mut fx.contrast, 0.8..=1.3).text("Kontrast"));
+                ui.add(egui::Slider::new(&mut fx.saturation, 0.5..=1.6).text("Sättigung"));
+                ui.add(egui::Slider::new(&mut fx.vibrance, -0.5..=0.8).text("Lebendigkeit"));
+                ui.add(egui::Slider::new(&mut fx.warmth, -1.0..=1.0).text("Farbtemperatur (− kühl / + warm)"));
+                ui.add(egui::Slider::new(&mut fx.filmic, 0.0..=1.0).text("Filmische Kurve"));
+                ui.checkbox(&mut fx.ssao, "Umgebungsverdeckung (SSAO)");
+                ui.add_enabled_ui(fx.ssao, |ui| {
+                    ui.add(egui::Slider::new(&mut fx.ssao_strength, 0.0..=2.0).text("SSAO-Stärke"));
+                    ui.add(egui::Slider::new(&mut fx.ssao_radius, 10.0..=200.0).text("SSAO-Radius"));
+                });
+                ui.checkbox(&mut fx.dof, "Tiefenunschärfe in der Ferne");
+                ui.add_enabled_ui(fx.dof, |ui| {
+                    ui.add(egui::Slider::new(&mut fx.dof_strength, 0.0..=1.0).text("Unschärfe-Stärke"));
+                    ui.add(egui::Slider::new(&mut fx.dof_start, 2000.0..=30000.0).text("Beginn der Unschärfe"));
+                    if fx.dof_end <= fx.dof_start {
+                        fx.dof_end = (fx.dof_start + 1000.0).min(32000.0);
+                    }
+                });
+                if ui.small_button("Effekte auf Standard zurücksetzen").clicked() {
+                    *fx = em4r_core::config::Fx { enabled: true, capture: fx.capture, ..Default::default() };
+                }
+            });
+
+            ui.add_space(8.0);
             ui.label(RichText::new("Leistung").strong());
             let fps_label = |v: u32| if v == 0 { "unbegrenzt".to_string() } else { format!("{v} FPS") };
             egui::ComboBox::from_label("FPS-Limit").selected_text(fps_label(r.cfg.perf.frame_limit)).show_ui(ui, |ui| {
