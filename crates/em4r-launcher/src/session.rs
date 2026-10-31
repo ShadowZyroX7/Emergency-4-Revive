@@ -91,9 +91,13 @@ pub fn fps_from_csv(csv: &str) -> (Option<f64>, Option<f64>) {
     (Some(rows.iter().map(|r| r.0).sum::<f64>() / n), Some(rows.iter().map(|r| r.1).sum::<f64>() / n))
 }
 
-/// Classify how the session ended from the tail of `logfile.txt` and any
-/// crash dump written after `since`.
-pub fn classify_ending(log_tail: &str, new_dump: Option<PathBuf>) -> Ending {
+/// Classify how the session ended from the tail of `logfile.txt`, the tail
+/// of the mod's `em4revive.log` and any crash dump written after `since`.
+pub fn classify_ending(log_tail: &str, mod_log_tail: &str, new_dump: Option<PathBuf>) -> Ending {
+    // EM4 Revive's fast exit saves the config and ends the process cleanly.
+    if mod_log_tail.contains("Schnelles Beenden: Einstellungen gespeichert") {
+        return Ending::Clean;
+    }
     let shutting_down = log_tail.contains("Destroy Network") || log_tail.contains("load time profile end");
     let fully_closed = log_tail.contains("Destroy Filesystem");
     match (new_dump, fully_closed, shutting_down) {
@@ -135,6 +139,7 @@ pub fn summarize(game_dir: &Path, run: &Running) -> Summary {
         if fresh { fps_from_csv(&std::fs::read_to_string(&csv_path).unwrap_or_default()) } else { (None, None) };
     let ending = classify_ending(
         &file_tail(&game_dir.join("logfile.txt"), 4096),
+        &file_tail(&game_dir.join("em4revive.log"), 2048),
         newest_dump_since(game_dir, run.started_wall),
     );
     Summary { label: run.target_label.clone(), minutes, fps_avg, fps_low, ending }
@@ -165,10 +170,12 @@ mod tests {
         let clean = "Destroy Network...\nDestroy Audio...\nDestroy Filesystem...";
         let mid_game = "!GameLoop : 3 seconds\n!WARNING: global listener object is still registered!";
         let dump = Some(PathBuf::from("x.dmp"));
-        assert_eq!(classify_ending(exit_crash, dump.clone()), Ending::CrashOnExit);
-        assert_eq!(classify_ending(exit_crash, None), Ending::CrashOnExit);
-        assert_eq!(classify_ending(clean, None), Ending::Clean);
-        assert_eq!(classify_ending(mid_game, dump.clone()), Ending::Crash(dump));
-        assert_eq!(classify_ending(mid_game, None), Ending::Crash(None));
+        assert_eq!(classify_ending(exit_crash, "", dump.clone()), Ending::CrashOnExit);
+        assert_eq!(classify_ending(exit_crash, "", None), Ending::CrashOnExit);
+        assert_eq!(classify_ending(clean, "", None), Ending::Clean);
+        assert_eq!(classify_ending(mid_game, "", dump.clone()), Ending::Crash(dump));
+        assert_eq!(classify_ending(mid_game, "", None), Ending::Crash(None));
+        let fast_exit = "INFO  | Schnelles Beenden: Einstellungen gespeichert, Spiel wird beendet";
+        assert_eq!(classify_ending("!GameLoop : 12 seconds", fast_exit, None), Ending::Clean);
     }
 }

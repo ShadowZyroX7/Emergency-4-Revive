@@ -143,6 +143,7 @@ extern "system" {
     pub fn CloseHandle(handle: HANDLE) -> BOOL;
     pub fn Sleep(ms: u32);
     pub fn FlushInstructionCache(process: HANDLE, addr: *const c_void, size: usize) -> BOOL;
+    pub fn TerminateProcess(process: HANDLE, exit_code: u32) -> BOOL;
     pub fn GetLastError() -> u32;
     pub fn SetLastError(code: u32);
 }

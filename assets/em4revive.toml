@@ -17,6 +17,9 @@ skip_intro = true
 # logfile.txt geöffnet halten statt für jede Zeile neu zu öffnen (schnelleres Laden,
 # weniger Ruckler bei Mods mit viel Log-Ausgabe). Jede Zeile wird trotzdem sofort gespeichert.
 fast_logfile = true
+# Beim Beenden die Einstellungen speichern und das Spiel sofort schließen, statt das
+# fehlerhafte Aufräumen der Engine laufen zu lassen (das stürzt mit vielen Mods ab).
+fast_exit = true
 
 [perf]
 # Windows-Timer auf 1 ms stellen (genaueres Timing, weniger Mikroruckler).

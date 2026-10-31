@@ -24,11 +24,12 @@ pub struct Config {
 pub struct Game {
     pub skip_intro: bool,
     pub fast_logfile: bool,
+    pub fast_exit: bool,
 }
 
 impl Default for Game {
     fn default() -> Self {
-        Self { skip_intro: true, fast_logfile: true }
+        Self { skip_intro: true, fast_logfile: true, fast_exit: true }
     }
 }
 

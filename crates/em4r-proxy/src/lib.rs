@@ -81,7 +81,7 @@ fn init(module: HMODULE) {
         apply_exe_patch(&em4r_core::patch::SKIP_INTRO);
     }
     if is_em4_exe() {
-        autostart::init(&game_dir);
+        autostart::init(&game_dir, cfg.game.fast_exit);
         if cfg.game.fast_logfile {
             logfile::init();
         }

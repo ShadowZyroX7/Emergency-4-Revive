@@ -53,57 +53,114 @@ type StartGameFn = unsafe extern "thiscall" fn(*mut c_void, i32, *mut u8);
 type StringCtorFn = unsafe extern "thiscall" fn(*mut u8, *const u8) -> *mut u8;
 type StringDtorFn = unsafe extern "thiscall" fn(*mut u8);
 
-/// Read the launcher's request and, if it asks for an automatic start,
-/// install the main-loop hook. Called from DllMain (before the game runs).
-pub fn init(game_dir: &Path) {
-    let req = match LaunchRequest::take(game_dir) {
-        Ok(Some(r)) => r,
-        Ok(None) => return,
-        Err(e) => {
-            warn!("Startauftrag unlesbar, ignoriert: {e}");
-            return;
-        }
-    };
-    info!("Startauftrag vom Launcher: {}", req.mode.label());
-    let Some(game_type) = req.mode.game_type() else { return };
+/// Fast exit: save the config like the options menu does, then end the
+/// process instead of running the engine's buggy teardown (it crashes in
+/// "Destroy Network" with AUBMP and many other mods).
+///
+/// * `0x479980` – config manager `GetInstance()` (cdecl, no arguments).
+/// * `0x732D80` – `ConfigManager::Save()` (thiscall, no stack arguments,
+///   plain `ret` at 0x732FA8). The options dialog calls exactly
+///   `GetInstance()` → `mov ecx,eax` → `Save()` (0x711004).
+const CONFIG_GET_INSTANCE: usize = 0x479980;
+const CONFIG_SAVE: usize = 0x732D80;
+const SIG_CONFIG_GET_INSTANCE: &[u8] = &[0x6A, 0xFF, 0x68, 0x5B, 0x6D, 0x98, 0x00, 0x64, 0xA1];
+const SIG_CONFIG_SAVE: &[u8] = &[0x6A, 0xFF, 0x68, 0x86, 0xE7, 0x9A, 0x00, 0x64, 0xA1];
 
-    // Was the game started with -mod? (Decides the default map, see above.)
-    let cmdline = std::env::args().collect::<Vec<_>>();
-    MOD_ACTIVE.store(cmdline.iter().any(|a| a.eq_ignore_ascii_case("-mod")), Ordering::Relaxed);
+static FAST_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+type GetInstanceFn = unsafe extern "C" fn() -> *mut c_void;
+type SaveFn = unsafe extern "thiscall" fn(*mut c_void);
+
+/// Install the main-loop hook if any feature needs it (direct start from
+/// the launcher, fast exit). Called from DllMain before the game runs.
+pub fn init(game_dir: &Path, fast_exit: bool) {
+    let start = read_start_request(game_dir);
     // SAFETY: fixed-base Em4.exe image; only reads.
-    let signatures_ok = unsafe {
-        patch::matches(START_GAME, SIG_START_GAME)
-            && patch::matches(STRING_CTOR, SIG_STRING_CTOR)
-            && patch::matches(STRING_DTOR, SIG_STRING_DTOR)
-    };
-    if !signatures_ok {
-        warn!("Direktstart: unbekannte Em4.exe-Version – du landest im Hauptmenü");
+    let fast_exit = fast_exit
+        && unsafe { patch::matches(CONFIG_GET_INSTANCE, SIG_CONFIG_GET_INSTANCE) && patch::matches(CONFIG_SAVE, SIG_CONFIG_SAVE) };
+    if start.is_none() && !fast_exit {
         return;
     }
     // SAFETY: DllMain at process start, the main loop has not run yet.
     let r = unsafe { patch::redirect_call(MAIN_LOOP_CALL_SITE, PROCESS_MESSAGES, main_loop_tick as *const () as usize) };
-    match r {
-        PatchResult::Applied | PatchResult::AlreadyApplied => {
-            PENDING_TYPE.store(game_type, Ordering::Release);
-            ARMED_AT_QPC.store(em4r_core::util::qpc_now() as u64, Ordering::Relaxed);
-            info!("Direktstart vorbereitet: {} (sobald das Hauptmenü bereit ist)", req.mode.label());
+    if !matches!(r, PatchResult::Applied | PatchResult::AlreadyApplied) {
+        match r {
+            PatchResult::Mismatch(found) => warn!("Hauptschleife unbekannt ({found:02X?}) – Direktstart/Schnelles Beenden aus"),
+            _ => error!("Hauptschleifen-Patch fehlgeschlagen"),
         }
-        PatchResult::Mismatch(found) => {
-            warn!("Direktstart: Hauptschleife unbekannt ({found:02X?}) – du landest im Hauptmenü")
-        }
-        PatchResult::Failed => error!("Direktstart: Patch fehlgeschlagen"),
+        return;
     }
+    if let Some((game_type, label)) = start {
+        PENDING_TYPE.store(game_type, Ordering::Release);
+        ARMED_AT_QPC.store(em4r_core::util::qpc_now() as u64, Ordering::Relaxed);
+        info!("Direktstart vorbereitet: {label} (sobald das Hauptmenü bereit ist)");
+    }
+    if fast_exit {
+        FAST_EXIT.store(true, Ordering::Release);
+        info!("Patch aktiv: Schnelles Beenden (Config speichern, fehlerhaftes Aufräumen überspringen)");
+    }
+}
+
+/// The launcher's start request, if it asks for an automatic start and the
+/// needed engine functions are present.
+fn read_start_request(game_dir: &Path) -> Option<(i32, &'static str)> {
+    let req = match LaunchRequest::take(game_dir) {
+        Ok(Some(r)) => r,
+        Ok(None) => return None,
+        Err(e) => {
+            warn!("Startauftrag unlesbar, ignoriert: {e}");
+            return None;
+        }
+    };
+    info!("Startauftrag vom Launcher: {}", req.mode.label());
+    let game_type = req.mode.game_type()?;
+    // Was the game started with -mod? (Decides the default map, see above.)
+    MOD_ACTIVE.store(std::env::args().any(|a| a.eq_ignore_ascii_case("-mod")), Ordering::Relaxed);
+    // SAFETY: fixed-base Em4.exe image; only reads.
+    let ok = unsafe {
+        patch::matches(START_GAME, SIG_START_GAME)
+            && patch::matches(STRING_CTOR, SIG_STRING_CTOR)
+            && patch::matches(STRING_DTOR, SIG_STRING_DTOR)
+    };
+    if !ok {
+        warn!("Direktstart: unbekannte Em4.exe-Version – du landest im Hauptmenü");
+        return None;
+    }
+    Some((game_type, req.mode.label()))
 }
 
 /// Replacement for the main loop's `ProcessMessages()` call.
 unsafe extern "C" fn main_loop_tick() -> u8 {
     let original: ProcessMessagesFn = core::mem::transmute(PROCESS_MESSAGES);
     let keep_running = original();
-    if keep_running != 0 && PENDING_TYPE.load(Ordering::Acquire) >= 0 {
+    if keep_running == 0 {
+        if FAST_EXIT.load(Ordering::Acquire) {
+            fast_exit();
+        }
+    } else if PENDING_TYPE.load(Ordering::Acquire) >= 0 {
         maybe_start();
     }
     keep_running
+}
+
+/// Save the config, then end the process without the engine teardown.
+unsafe fn fast_exit() -> ! {
+    info!("Schnelles Beenden: speichere Einstellungen …");
+    let get: GetInstanceFn = core::mem::transmute(CONFIG_GET_INSTANCE);
+    let save: SaveFn = core::mem::transmute(CONFIG_SAVE);
+    let cfg = get();
+    if cfg.is_null() {
+        warn!("Schnelles Beenden: Config-Manager fehlt – Einstellungen nicht gespeichert");
+    } else {
+        save(cfg);
+        info!("Schnelles Beenden: Einstellungen gespeichert, Spiel wird beendet");
+    }
+    // TerminateProcess instead of ExitProcess: no DLL/atexit teardown, which
+    // would run the same broken destructors. Our logs flush every line.
+    em4r_core::ffi::TerminateProcess(em4r_core::ffi::GetCurrentProcess(), 0);
+    loop {
+        core::hint::spin_loop();
+    }
 }
 
 unsafe fn maybe_start() {
