@@ -147,7 +147,7 @@ mod tests {
             // Case-insensitive DLL name.
             assert_eq!(find_iat_slot(exe, "kernel32.DLL", "GetCurrentProcessId"), Some(slot));
 
-            let old = write_slot(slot, fake_pid as usize).unwrap();
+            let old = write_slot(slot, fake_pid as *const () as usize).unwrap();
             assert_eq!(core::hint::black_box(GetCurrentProcessId)(), 4242);
             write_slot(slot, old).unwrap();
             assert_eq!(core::hint::black_box(GetCurrentProcessId)(), real);

@@ -26,7 +26,7 @@ impl IatHook {
 #[macro_export]
 macro_rules! iat_hook {
     ($dll:expr, $func:expr, $detour:expr, $orig:expr) => {
-        $crate::hook::IatHook { dll: $dll, func: $func, detour: $detour as usize, original: &$orig }
+        $crate::hook::IatHook { dll: $dll, func: $func, detour: $detour as *const () as usize, original: &$orig }
     };
 }
 

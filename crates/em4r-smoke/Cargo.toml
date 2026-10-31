@@ -1,0 +1,10 @@
+[package]
+name = "em4r-smoke"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Loads the built dinput8.dll outside the game and checks the basics"
+publish = false
+
+[dependencies]
+em4r-core.workspace = true
