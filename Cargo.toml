@@ -7,6 +7,7 @@ members = [
     "crates/em4r-prof",
     "crates/em4r-proxy",
     "crates/em4r-smoke",
+    "crates/em4r-launcher",
 ]
 
 [workspace.package]

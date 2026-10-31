@@ -24,6 +24,8 @@ Remove-Item (Join-Path $GameDir 'dinput8.pdb') -Force -ErrorAction SilentlyConti
 $foreign = Join-Path $backup 'dinput8.dll.fremd'
 if (Test-Path $foreign) { Move-Item $foreign $target; Write-Host "Vorherige fremde dinput8.dll wiederhergestellt." }
 
+Remove-Item (Join-Path $GameDir 'EM4Revive.exe'), (Join-Path $GameDir 'em4revive_launcher.toml') -Force -ErrorAction SilentlyContinue
+
 if (-not $KeepLogs) {
     Remove-Item (Join-Path $GameDir 'em4revive.log'), (Join-Path $GameDir 'em4revive_stats.csv') -Force -ErrorAction SilentlyContinue
 }

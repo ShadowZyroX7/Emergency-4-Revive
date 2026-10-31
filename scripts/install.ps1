@@ -33,6 +33,11 @@ $pdb = Join-Path $root 'dist\dinput8.pdb'
 if (Test-Path $pdb) { Copy-Item $pdb $GameDir -Force }
 $cfg = Join-Path $GameDir 'em4revive.toml'
 if (-not (Test-Path $cfg)) { Copy-Item (Join-Path $root 'dist\em4revive.toml') $cfg }
+$launcher = Join-Path $root 'dist\EM4Revive.exe'
+if (Test-Path $launcher) {
+    if (Get-Process EM4Revive -ErrorAction SilentlyContinue) { throw "Der EM4 Revive Launcher läuft noch – bitte erst schließen." }
+    Copy-Item $launcher $GameDir -Force
+}
 
 $hash = (Get-FileHash $target -Algorithm SHA256).Hash
 Set-Content $marker -Encoding utf8 -Value "installiert=$(Get-Date -Format s)`nsha256=$hash"

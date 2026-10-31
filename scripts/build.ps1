@@ -15,6 +15,7 @@ try {
     Copy-Item "$root\target\i686-pc-windows-msvc\release\dinput8.dll" $dist -Force
     Copy-Item "$root\target\i686-pc-windows-msvc\release\dinput8.pdb" $dist -Force -ErrorAction SilentlyContinue
     Copy-Item "$root\assets\em4revive.toml" $dist -Force
+    Copy-Item "$root\target\i686-pc-windows-msvc\release\EM4Revive.exe" $dist -Force
     Write-Host "Fertig: $dist" -ForegroundColor Green
 } finally {
     Pop-Location
