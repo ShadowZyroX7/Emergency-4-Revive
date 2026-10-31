@@ -43,7 +43,11 @@ struct Shared {
     per_ext: HashMap<(Phase, String), ExtStats>,
     /// The slowest successful opens: (ticks, path).
     slowest: Vec<(u64, String)>,
+    /// Paths that were looked up but do not exist: path -> count.
+    missing: HashMap<String, u32>,
 }
+
+const MISSING_CAP: usize = 50_000;
 
 impl PhaseStats {
     const fn new() -> Self {
@@ -85,7 +89,38 @@ type FindFirstFileA = unsafe extern "system" fn(*const u8, *mut c_void) -> HANDL
 
 pub fn init() {
     if let Ok(mut g) = SHARED.lock() {
-        *g = Some(Shared { handles: HashMap::new(), per_ext: HashMap::new(), slowest: Vec::new() });
+        *g = Some(Shared { handles: HashMap::new(), per_ext: HashMap::new(), slowest: Vec::new(), missing: HashMap::new() });
+    }
+}
+
+/// Em4.exe calls CreateFileW through an MSLU (unicows) lazy-binding slot,
+/// not through its import table. The slot initially holds a resolver stub;
+/// we put our detour there instead (the detour calls the real CreateFileW,
+/// exactly what the stub would end up doing on Windows NT).
+const MSLU_CREATEFILEW_SLOT: usize = 0xA934D8;
+const MSLU_CREATEFILEW_STUB: usize = 0x9551D8;
+
+pub fn patch_em4_createfilew() {
+    use em4r_core::patch::{swap_pointer, PatchResult};
+    let Some(real) = em4r_core::util::loaded_proc("kernel32.dll", "CreateFileW") else { return };
+    let _ = ORIG_CREATE_W.compare_exchange(0, real, Ordering::AcqRel, Ordering::Acquire);
+    if ORIG_CREATE_W.load(Ordering::Acquire) != real {
+        em4r_core::warn!("Datei-Statistik: CreateFileW ist bereits umgeleitet – Em4.exe-Zugriffe werden nicht gemessen");
+        return;
+    }
+    let detour = hk_create_file_w as *const () as usize;
+    // SAFETY: fixed-base Em4.exe .data slot; verified value before writing.
+    let r = unsafe {
+        match swap_pointer(MSLU_CREATEFILEW_SLOT, MSLU_CREATEFILEW_STUB, detour) {
+            PatchResult::Mismatch(_) => swap_pointer(MSLU_CREATEFILEW_SLOT, real, detour),
+            other => other,
+        }
+    };
+    match r {
+        PatchResult::Applied | PatchResult::AlreadyApplied => {
+            em4r_core::info!("Datei-Statistik: auch Em4.exe-Dateizugriffe (unicows CreateFileW) werden gemessen")
+        }
+        other => em4r_core::warn!("Datei-Statistik: Em4.exe-CreateFileW nicht umleitbar ({other:?})"),
     }
 }
 
@@ -164,6 +199,9 @@ fn record_open(path: String, handle: HANDLE, ticks: u64) {
     e.open_ticks += ticks;
     if failed {
         e.fails += 1;
+        if sh.missing.len() < MISSING_CAP || sh.missing.contains_key(&path) {
+            *sh.missing.entry(path).or_default() += 1;
+        }
         return;
     }
     sh.handles.insert(handle as usize, ext);
@@ -287,17 +325,30 @@ pub fn render(out: &mut String) {
 
     let Ok(g) = SHARED.lock() else { return };
     let Some(sh) = g.as_ref() else { return };
-    let _ = writeln!(out, "\n  Nach Dateiendung (Laden), sortiert nach Gesamtzeit:");
-    let _ = writeln!(out, "    {:<10} {:>8} {:>8} {:>10} {:>10} {:>10}", "Endung", "geöffnet", "fehlt", "MB", "Öffnen ms", "Lesen ms");
-    let mut rows: Vec<_> = sh.per_ext.iter().filter(|((p, _), _)| *p == Phase::Loading).collect();
-    rows.sort_by(|a, b| (b.1.open_ticks + b.1.read_ticks).cmp(&(a.1.open_ticks + a.1.read_ticks)));
-    for ((_, ext), e) in rows.into_iter().take(15) {
+    for phase in [Phase::Loading, Phase::Playing] {
+        let _ = writeln!(out, "\n  Nach Dateiendung ({}), sortiert nach Gesamtzeit:", phase.label());
         let _ = writeln!(
             out,
-            "    {:<10} {:>8} {:>8} {:>10.1} {:>10.0} {:>10.0}",
-            ext, e.opens, e.fails, e.bytes as f64 / 1048576.0, ms(e.open_ticks), ms(e.read_ticks)
+            "    {:<10} {:>8} {:>8} {:>10} {:>10} {:>10}",
+            "Endung", "geöffnet", "fehlt", "MB", "Öffnen ms", "Lesen ms"
         );
+        let mut rows: Vec<_> = sh.per_ext.iter().filter(|((p, _), _)| *p == phase).collect();
+        rows.sort_by(|a, b| (b.1.open_ticks + b.1.read_ticks).cmp(&(a.1.open_ticks + a.1.read_ticks)));
+        for ((_, ext), e) in rows.into_iter().take(15) {
+            let _ = writeln!(
+                out,
+                "    {:<10} {:>8} {:>8} {:>10.1} {:>10.0} {:>10.0}",
+                ext, e.opens, e.fails, e.bytes as f64 / 1048576.0, ms(e.open_ticks), ms(e.read_ticks)
+            );
+        }
     }
+    let _ = writeln!(out, "\n  Am häufigsten vergeblich gesuchte Dateien (Anzahl Versuche):");
+    let mut miss: Vec<_> = sh.missing.iter().collect();
+    miss.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    for (p, n) in miss.iter().take(25) {
+        let _ = writeln!(out, "    {n:>7}x  {p}");
+    }
+    let _ = writeln!(out, "    (insgesamt {} verschiedene fehlende Pfade)", sh.missing.len());
     let _ = writeln!(out, "\n  Langsamste einzelne Datei-Öffnungen:");
     for (t, p) in &sh.slowest {
         let _ = writeln!(out, "    {:8.1} ms  {p}", ms(*t));

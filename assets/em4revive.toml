@@ -14,6 +14,9 @@ debug_log = false
 # Sixteen-Tons-Logo, 1 Sekunde Pause und Intro-Video beim Start überspringen.
 # (Nur im Arbeitsspeicher – Em4.exe auf der Festplatte bleibt unverändert.)
 skip_intro = true
+# logfile.txt geöffnet halten statt für jede Zeile neu zu öffnen (schnelleres Laden,
+# weniger Ruckler bei Mods mit viel Log-Ausgabe). Jede Zeile wird trotzdem sofort gespeichert.
+fast_logfile = true
 
 [perf]
 # Windows-Timer auf 1 ms stellen (genaueres Timing, weniger Mikroruckler).

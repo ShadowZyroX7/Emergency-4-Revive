@@ -6,6 +6,7 @@
 //! a few graphics imports of the game's modules to our improved versions.
 
 mod autostart;
+mod logfile;
 
 use core::ffi::c_void;
 use em4r_core::ffi::*;
@@ -81,6 +82,9 @@ fn init(module: HMODULE) {
     }
     if is_em4_exe() {
         autostart::init(&game_dir);
+        if cfg.game.fast_logfile {
+            logfile::init();
+        }
     }
     if cfg.perf.dpi_aware {
         // SAFETY: plain Win32 call.
@@ -101,6 +105,9 @@ fn init(module: HMODULE) {
     if cfg.profiler.enabled {
         if cfg.profiler.file_io {
             hooks.extend(em4r_prof::fileio::hooks());
+            if is_em4_exe() {
+                em4r_prof::fileio::patch_em4_createfilew();
+            }
         }
         // DllMain of a statically imported DLL runs on the main thread.
         em4r_prof::start(em4r_prof::Settings {

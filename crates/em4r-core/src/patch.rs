@@ -63,6 +63,28 @@ pub unsafe fn redirect_call(site: usize, original_target: usize, new_target: usi
     apply_at(site as *mut u8, &expected, &replacement)
 }
 
+/// Replace `call dword ptr [slot]` (FF 15 slot, 6 bytes) at `site` with
+/// `call new_target; nop` – only if the instruction is exactly that.
+///
+/// # Safety
+/// `site` must be mapped code that no other thread executes right now.
+pub unsafe fn redirect_indirect_call(site: usize, slot: usize, new_target: usize) -> PatchResult {
+    let s = (slot as u32).to_le_bytes();
+    let expected = [0xFF, 0x15, s[0], s[1], s[2], s[3]];
+    let c = call_rel32(site, new_target);
+    let replacement = [c[0], c[1], c[2], c[3], c[4], 0x90];
+    apply_at(site as *mut u8, &expected, &replacement)
+}
+
+/// Swap a function pointer stored in data (e.g. an MSLU/unicows lazy-binding
+/// slot) – only if it currently holds `expected`.
+///
+/// # Safety
+/// `slot` must be a mapped, pointer-aligned data location.
+pub unsafe fn swap_pointer(slot: usize, expected: usize, new_value: usize) -> PatchResult {
+    apply_at(slot as *mut u8, &expected.to_le_bytes(), &new_value.to_le_bytes())
+}
+
 /// Do the bytes at `addr` match `expected` (code signature check)?
 ///
 /// # Safety
@@ -150,6 +172,30 @@ mod tests {
         // A call to something else is left alone.
         assert!(matches!(unsafe { redirect_call(site, orig + 1, new) }, PatchResult::AlreadyApplied | PatchResult::Mismatch(_)));
         assert!(unsafe { matches(site, &call_rel32(site, new)) });
+    }
+
+    #[test]
+    fn indirect_call_and_pointer_swap() {
+        // call dword ptr [0x9D21EC]  (Em4.exe 0x73B52B, _wfopen)
+        let mut buf = vec![0xFFu8, 0x15, 0xEC, 0x21, 0x9D, 0x00, 0xCC];
+        let site = buf.as_mut_ptr() as usize;
+        let target = site + 0x100;
+        assert_eq!(unsafe { redirect_indirect_call(site, 0x9D21EC, target) }, PatchResult::Applied);
+        assert_eq!(&buf[..5], &call_rel32(site, target));
+        assert_eq!(buf[5], 0x90);
+        assert_eq!(buf[6], 0xCC);
+        // Wrong slot -> untouched.
+        let mut other = vec![0xFFu8, 0x15, 0x78, 0x24, 0x9D, 0x00];
+        let before = other.clone();
+        let r = unsafe { redirect_indirect_call(other.as_mut_ptr() as usize, 0x9D21EC, target) };
+        assert!(matches!(r, PatchResult::Mismatch(_)));
+        assert_eq!(other, before);
+
+        let mut slot: usize = 0x9551D8;
+        let p = &mut slot as *mut usize as usize;
+        assert_eq!(unsafe { swap_pointer(p, 0x9551D8, 0x1234) }, PatchResult::Applied);
+        assert_eq!(slot, 0x1234);
+        assert!(matches!(unsafe { swap_pointer(p, 0x9551D8, 0x5678) }, PatchResult::Mismatch(_)));
     }
 
     #[test]

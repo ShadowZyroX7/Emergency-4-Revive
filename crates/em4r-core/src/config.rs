@@ -23,11 +23,12 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct Game {
     pub skip_intro: bool,
+    pub fast_logfile: bool,
 }
 
 impl Default for Game {
     fn default() -> Self {
-        Self { skip_intro: true }
+        Self { skip_intro: true, fast_logfile: true }
     }
 }
 
