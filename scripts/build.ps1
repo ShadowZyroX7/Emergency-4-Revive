@@ -1,4 +1,4 @@
-# Builds the release DLL and collects it in dist\.
+﻿# Builds the release DLL and collects it in dist\.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $env:Path += ";$env:USERPROFILE\.cargo\bin"

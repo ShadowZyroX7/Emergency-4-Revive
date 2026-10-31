@@ -1,4 +1,4 @@
-# Installs EM4 Revive into the game folder.
+﻿# Installs EM4 Revive into the game folder.
 # Copies only dinput8.dll (+ em4revive.toml if not present). No game file is modified.
 param(
     [string]$GameDir = 'C:\SteamLibrary\steamapps\common\EMERGENCY 4 Deluxe',

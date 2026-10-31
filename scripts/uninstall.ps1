@@ -1,4 +1,4 @@
-# Removes EM4 Revive from the game folder and restores the original state.
+﻿# Removes EM4 Revive from the game folder and restores the original state.
 param(
     [string]$GameDir = 'C:\SteamLibrary\steamapps\common\EMERGENCY 4 Deluxe',
     [switch]$KeepLogs
