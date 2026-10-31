@@ -29,9 +29,9 @@ impl Preset {
     }
     pub fn description(self) -> &'static str {
         match self {
-            Preset::Leistung => "Maximale FPS: 4x Texturfilter, kein FPS-Limit",
-            Preset::Ausgewogen => "Empfohlen: 16x Texturfilter, 24-Bit-Tiefe, FPS auf 144 begrenzt",
-            Preset::Qualitaet => "Beste Optik: 16x Texturfilter, Trilinear, VSync an",
+            Preset::Leistung => "Maximale FPS: keine Kantenglättung, 4x Texturfilter, kein FPS-Limit",
+            Preset::Ausgewogen => "Empfohlen: 4x MSAA, 16x Texturfilter, 24-Bit-Tiefe, FPS auf 144 begrenzt",
+            Preset::Qualitaet => "Beste Optik: 8x MSAA, 16x Texturfilter, Trilinear, VSync an",
         }
     }
 }
@@ -64,6 +64,7 @@ impl ReviveConfig {
         self.set("gl", "force_depth_bits", value(c.gl.force_depth_bits as i64));
         self.set("gl", "force_stencil_bits", value(c.gl.force_stencil_bits as i64));
         self.set("gl", "anisotropy", value(c.gl.anisotropy as i64));
+        self.set("gl", "msaa", value(c.gl.msaa as i64));
         self.set("gl", "force_trilinear", value(c.gl.force_trilinear));
         self.set("crash", "minidump", value(c.crash.minidump));
         self.set("profiler", "enabled", value(c.profiler.enabled));
@@ -99,18 +100,21 @@ impl ReviveConfig {
         c.gl.force_stencil_bits = 8;
         match p {
             Preset::Leistung => {
+                c.gl.msaa = 0;
                 c.gl.anisotropy = 4;
                 c.gl.force_trilinear = false;
                 c.perf.frame_limit = 0;
                 c.perf.vsync = 0;
             }
             Preset::Ausgewogen => {
+                c.gl.msaa = 4;
                 c.gl.anisotropy = 16;
                 c.gl.force_trilinear = true;
                 c.perf.frame_limit = 144;
                 c.perf.vsync = -1;
             }
             Preset::Qualitaet => {
+                c.gl.msaa = 8;
                 c.gl.anisotropy = 16;
                 c.gl.force_trilinear = true;
                 c.perf.frame_limit = 0;

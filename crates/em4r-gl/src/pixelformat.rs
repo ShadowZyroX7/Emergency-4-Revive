@@ -87,6 +87,17 @@ unsafe fn choose_common(orig: usize, name: &str, hdc: HDC, ppfd: *const PIXELFOR
         return f(hdc, ppfd);
     }
     let requested = *ppfd;
+    // MSAA first: a multisample format with the raised depth/stencil.
+    if s.msaa >= 2 {
+        if let Some((format, samples)) = crate::msaa::choose(hdc, &requested, s.depth_bits, s.stencil_bits, s.msaa) {
+            info!(
+                "{name}: Spiel wollte [{}] -> Format {format} mit {samples}x MSAA [{}]",
+                fmt_pfd(&requested),
+                describe(hdc, format).as_ref().map(fmt_pfd).unwrap_or_else(|| "?".into())
+            );
+            return format;
+        }
+    }
     let mut raised = requested;
     let changed = raise_request(&mut raised, s.depth_bits, s.stencil_bits);
     let format = if changed { f(hdc, &raised) } else { 0 };

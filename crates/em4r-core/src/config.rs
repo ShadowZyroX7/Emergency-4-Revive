@@ -78,6 +78,7 @@ pub struct Stats {
 pub struct Gl {
     pub force_depth_bits: u8,
     pub force_stencil_bits: u8,
+    pub msaa: u32,
     pub anisotropy: u32,
     pub force_trilinear: bool,
     pub count_draw_calls: bool,
@@ -122,6 +123,7 @@ impl Default for Gl {
         Self {
             force_depth_bits: 24,
             force_stencil_bits: 8,
+            msaa: 4,
             anisotropy: 16,
             force_trilinear: true,
             count_draw_calls: true,
@@ -155,6 +157,10 @@ impl Config {
         if g.force_stencil_bits > 8 {
             notes.push(format!("gl.force_stencil_bits={} -> 8", g.force_stencil_bits));
             g.force_stencil_bits = 8;
+        }
+        if !matches!(g.msaa, 0 | 2 | 4 | 8) {
+            notes.push(format!("gl.msaa={} ungültig -> 4", g.msaa));
+            g.msaa = 4;
         }
         if g.anisotropy > 16 {
             notes.push(format!("gl.anisotropy={} -> 16", g.anisotropy));

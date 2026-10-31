@@ -48,6 +48,9 @@ interval_sec = 1.0
 force_depth_bits = 24
 # Stencil-Puffer (Bits). 0 = nicht verändern, sonst 8.
 force_stencil_bits = 8
+# Kantenglättung (MSAA): 0 = aus, 2, 4 oder 8 Samples. Glättet Kanten von Fahrzeugen,
+# Gebäuden und Leitungen. Fällt automatisch auf weniger Samples zurück, wenn nötig.
+msaa = 4
 # Anisotrope Texturfilterung (schärfere Böden/Straßen). 0 = nicht verändern, sonst 2/4/8/16.
 anisotropy = 16
 # Bilinear-Mipmapping zu Trilinear aufwerten (weichere Übergänge zwischen Mip-Stufen).

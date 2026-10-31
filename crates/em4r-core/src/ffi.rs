@@ -215,10 +215,31 @@ pub struct CONTEXT {
     pub raw: [u8; 0],
 }
 
+pub type HWND = *mut c_void;
+
 #[link(name = "user32")]
 extern "system" {
     pub fn SetProcessDPIAware() -> BOOL;
+    pub fn CreateWindowExW(
+        ex_style: u32,
+        class: *const u16,
+        title: *const u16,
+        style: u32,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        parent: HWND,
+        menu: *mut c_void,
+        instance: HMODULE,
+        param: *mut c_void,
+    ) -> HWND;
+    pub fn DestroyWindow(hwnd: HWND) -> BOOL;
+    pub fn GetDC(hwnd: HWND) -> HDC;
+    pub fn ReleaseDC(hwnd: HWND, hdc: HDC) -> i32;
 }
+
+pub const WS_POPUP: u32 = 0x8000_0000;
 
 #[link(name = "winmm")]
 extern "system" {
@@ -228,6 +249,8 @@ extern "system" {
 #[link(name = "gdi32")]
 extern "system" {
     pub fn DescribePixelFormat(hdc: HDC, format: i32, bytes: u32, pfd: *mut PIXELFORMATDESCRIPTOR) -> i32;
+    pub fn ChoosePixelFormat(hdc: HDC, pfd: *const PIXELFORMATDESCRIPTOR) -> i32;
+    pub fn SetPixelFormat(hdc: HDC, format: i32, pfd: *const PIXELFORMATDESCRIPTOR) -> BOOL;
 }
 
 /// `MiniDumpWriteDump` (loaded dynamically from dbghelp.dll).

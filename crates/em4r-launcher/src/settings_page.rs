@@ -147,6 +147,16 @@ impl SettingsPage {
             });
             ui.add_space(8.0);
             ui.label(RichText::new("Grafik").strong());
+            let msaa_label = |v: u32| if v == 0 { "aus".to_string() } else { format!("{v}x MSAA") };
+            egui::ComboBox::from_label("Kantenglättung")
+                .selected_text(msaa_label(r.cfg.gl.msaa))
+                .show_ui(ui, |ui| {
+                    for v in [0u32, 2, 4, 8] {
+                        ui.selectable_value(&mut r.cfg.gl.msaa, v, msaa_label(v));
+                    }
+                })
+                .response
+                .on_hover_text("Glättet treppenartige Kanten. 4x ist ein guter Kompromiss.");
             let af_label = |v: u32| if v == 0 { "Spiel entscheidet".to_string() } else { format!("{v}x") };
             egui::ComboBox::from_label("Texturfilter (anisotrop)")
                 .selected_text(af_label(r.cfg.gl.anisotropy))

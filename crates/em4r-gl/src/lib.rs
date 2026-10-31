@@ -1,6 +1,7 @@
 //! OpenGL / WGL hooks: pixel format (depth/stencil), texture filtering and
 //! draw-call counting.
 
+pub mod msaa;
 pub mod pixelformat;
 pub mod texture;
 
@@ -13,6 +14,7 @@ use std::sync::atomic::AtomicUsize;
 pub struct GlSettings {
     pub depth_bits: u8,
     pub stencil_bits: u8,
+    pub msaa: u32,
     pub anisotropy: u32,
     pub force_trilinear: bool,
     pub count_draw_calls: bool,
@@ -24,6 +26,7 @@ pub fn configure(cfg: &em4r_core::Config) {
     let _ = SETTINGS.set(GlSettings {
         depth_bits: cfg.gl.force_depth_bits,
         stencil_bits: cfg.gl.force_stencil_bits,
+        msaa: cfg.gl.msaa,
         anisotropy: cfg.gl.anisotropy,
         force_trilinear: cfg.gl.force_trilinear,
         count_draw_calls: cfg.gl.count_draw_calls,
@@ -35,6 +38,7 @@ pub(crate) fn settings() -> &'static GlSettings {
     SETTINGS.get_or_init(|| GlSettings {
         depth_bits: 0,
         stencil_bits: 0,
+        msaa: 0,
         anisotropy: 0,
         force_trilinear: false,
         count_draw_calls: false,
