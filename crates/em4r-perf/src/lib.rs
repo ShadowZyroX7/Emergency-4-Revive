@@ -127,6 +127,8 @@ fn before_present() {
     let now = qpc_now();
     em4r_core::counters::mark_present(now);
     let draws = em4r_core::counters::take_draw_calls();
+    // Diagnostics: trace one frame once the game is really running.
+    em4r_gl::trace::on_swap(em4r_core::counters::render_streak_ms() > 20_000.0 && draws > 300);
     // try_lock: never stall the render thread on our own bookkeeping.
     let Ok(mut guard) = STATE.try_lock() else { return };
     let Some(st) = guard.as_mut() else { return };

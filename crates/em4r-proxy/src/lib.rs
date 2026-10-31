@@ -137,6 +137,10 @@ fn init(module: HMODULE) {
         iat_hook!("kernel32.dll", "LoadLibraryExW", hk_load_library_ex_w, ORIG_LLEXW),
     ]);
 
+    // Frame trace: separate detours per module (functions not used elsewhere).
+    if cfg.profiler.frame_trace {
+        install_frame_trace(&game_dir, module);
+    }
     let _ = CONTEXT.set(Context { game_dir, own: module as usize, hooks });
     let installed = patch_game_modules();
     report(&installed);
@@ -165,6 +169,21 @@ fn apply_exe_patch(p: &em4r_core::patch::BytePatch) {
         ),
         PatchResult::Failed => error!("{}: Speicher konnte nicht beschrieben werden", p.name),
     }
+}
+
+fn install_frame_trace(game_dir: &std::path::Path, own: HMODULE) {
+    let mut n = 0;
+    for (m, name) in hook::game_modules(game_dir, own, EXCLUDED_MODULES) {
+        let hooks = match name.as_str() {
+            "vision71.dll" => em4r_gl::trace::vision::hooks(),
+            "em4.exe" => em4r_gl::trace::em4::hooks(),
+            _ => continue,
+        };
+        // SAFETY: `m` comes from the loader's module list.
+        n += unsafe { hook::install_into(m, &name, &hooks) }.len();
+    }
+    em4r_gl::trace::arm(game_dir.join("em4revive_frametrace.txt"));
+    info!("Frame-Trace vorbereitet ({n} Hooks) – zeichnet ein Bild nach 20 s im Spiel auf");
 }
 
 /// Patch every game module that is currently loaded.

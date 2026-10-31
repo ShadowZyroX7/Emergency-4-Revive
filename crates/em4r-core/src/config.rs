@@ -40,11 +40,12 @@ pub struct Profiler {
     pub sample_hz: u32,
     pub file_io: bool,
     pub report_interval_sec: u32,
+    pub frame_trace: bool,
 }
 
 impl Default for Profiler {
     fn default() -> Self {
-        Self { enabled: false, sample_hz: 1000, file_io: true, report_interval_sec: 15 }
+        Self { enabled: false, sample_hz: 1000, file_io: true, report_interval_sec: 15, frame_trace: false }
     }
 }
 

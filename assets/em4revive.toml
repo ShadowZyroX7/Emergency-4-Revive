@@ -72,3 +72,6 @@ sample_hz = 1000
 file_io = true
 # Bericht alle X Sekunden aktualisieren.
 report_interval_sec = 15
+# Entwickler-Diagnose: ein einzelnes Bild im Spiel Aufruf für Aufruf aufzeichnen
+# (em4revive_frametrace.txt). Unabhängig vom Profiler.
+frame_trace = false

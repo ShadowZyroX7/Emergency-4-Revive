@@ -946,6 +946,7 @@ name = "em4r-perf"
 version = "0.1.0"
 dependencies = [
  "em4r-core",
+ "em4r-gl",
 ]
 
 [[package]]

@@ -4,6 +4,7 @@
 pub mod msaa;
 pub mod pixelformat;
 pub mod texture;
+pub mod trace;
 
 use em4r_core::hook::IatHook;
 use em4r_core::iat_hook;
