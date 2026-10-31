@@ -107,6 +107,7 @@ pub struct Perf {
     pub vsync: i32,
     pub dpi_aware: bool,
     pub missing_file_cache: bool,
+    pub fast_zlib: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -155,7 +156,7 @@ impl Default for General {
 }
 impl Default for Perf {
     fn default() -> Self {
-        Self { high_res_timer: true, frame_limit: 0, vsync: -1, dpi_aware: true, missing_file_cache: true }
+        Self { high_res_timer: true, frame_limit: 0, vsync: -1, dpi_aware: true, missing_file_cache: true, fast_zlib: true }
     }
 }
 impl Default for Stats {

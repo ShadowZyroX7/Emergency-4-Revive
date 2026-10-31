@@ -85,6 +85,10 @@ fn init(module: HMODULE) {
         if cfg.game.fast_logfile {
             logfile::init();
         }
+        if cfg.perf.fast_zlib {
+            // SAFETY: DllMain at process start; no game code is running yet.
+            unsafe { em4r_zlib::install() };
+        }
     }
     if cfg.perf.dpi_aware {
         // SAFETY: plain Win32 call.

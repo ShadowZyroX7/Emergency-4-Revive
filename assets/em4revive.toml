@@ -33,6 +33,9 @@ dpi_aware = true
 # Merkt sich Dateien, die das Spiel vergeblich gesucht hat, und beantwortet weitere
 # Suchen danach sofort (das Spiel sucht dieselben fehlenden Dateien zehntausendfach).
 missing_file_cache = true
+# Schnelleres Entpacken von Modellen, PNG-Texturen und ZIP-Dateien beim Laden
+# (ersetzt die eingebaute zlib von 2003 durch eine moderne Implementierung).
+fast_zlib = true
 
 [stats]
 # Misst FPS, Frametimes, Draw-Calls und RAM.

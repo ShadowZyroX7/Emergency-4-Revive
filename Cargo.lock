@@ -974,6 +974,7 @@ dependencies = [
  "em4r-gl",
  "em4r-perf",
  "em4r-prof",
+ "em4r-zlib",
 ]
 
 [[package]]
@@ -988,6 +989,14 @@ name = "em4r-smoke"
 version = "0.1.0"
 dependencies = [
  "em4r-core",
+]
+
+[[package]]
+name = "em4r-zlib"
+version = "0.1.0"
+dependencies = [
+ "em4r-core",
+ "libz-rs-sys",
 ]
 
 [[package]]
@@ -1127,7 +1136,7 @@ checksum = "6e634e2e0ebac1ee034020da1ca582e17ffe4e0f5e985823721e168928136dcb"
 dependencies = [
  "crc32fast",
  "miniz_oxide 0.9.1",
- "zlib-rs",
+ "zlib-rs 0.6.8",
 ]
 
 [[package]]
@@ -1744,6 +1753,15 @@ dependencies = [
  "libc",
  "plain",
  "redox_syscall 0.9.5",
+]
+
+[[package]]
+name = "libz-rs-sys"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c10501e7805cee23da17c7790e59df2870c0d4043ec6d03f67d31e2b53e77415"
+dependencies = [
+ "zlib-rs 0.5.5",
 ]
 
 [[package]]
@@ -4159,6 +4177,12 @@ dependencies = [
  "quote",
  "syn 3.0.9",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40990edd51aae2c2b6907af74ffb635029d5788228222c4bb811e9351c0caad3"
 
 [[package]]
 name = "zlib-rs"

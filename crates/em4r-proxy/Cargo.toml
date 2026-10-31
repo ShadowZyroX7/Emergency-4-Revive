@@ -13,5 +13,6 @@ crate-type = ["cdylib"]
 em4r-core.workspace = true
 em4r-gl.workspace = true
 em4r-fx.workspace = true
+em4r-zlib.workspace = true
 em4r-perf.workspace = true
 em4r-prof.workspace = true

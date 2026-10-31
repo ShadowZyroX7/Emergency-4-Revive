@@ -225,6 +225,7 @@ impl SettingsPage {
             });
             ui.checkbox(&mut r.cfg.game.fast_logfile, "Schnelles Log (spart ~5 s Ladezeit)");
             ui.checkbox(&mut r.cfg.perf.missing_file_cache, "Speicher für fehlende Dateien (weniger Dateisuchen)");
+            ui.checkbox(&mut r.cfg.perf.fast_zlib, "Schnelles Entpacken (modernes zlib statt Version von 2003)");
             ui.checkbox(&mut r.cfg.perf.high_res_timer, "Genauer Windows-Timer (gleichmäßigere Bildrate)");
 
             ui.add_space(8.0);

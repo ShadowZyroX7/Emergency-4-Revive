@@ -59,6 +59,7 @@ impl ReviveConfig {
         self.set("perf", "frame_limit", value(c.perf.frame_limit as i64));
         self.set("perf", "vsync", value(c.perf.vsync as i64));
         self.set("perf", "missing_file_cache", value(c.perf.missing_file_cache));
+        self.set("perf", "fast_zlib", value(c.perf.fast_zlib));
         self.set("perf", "high_res_timer", value(c.perf.high_res_timer));
         self.set("stats", "enabled", value(c.stats.enabled));
         self.set("gl", "force_depth_bits", value(c.gl.force_depth_bits as i64));

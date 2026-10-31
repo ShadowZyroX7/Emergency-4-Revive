@@ -1,0 +1,10 @@
+[package]
+name = "em4r-zlib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Replaces vBase71.dll's embedded zlib 1.2.1 inflate with zlib-rs"
+
+[dependencies]
+em4r-core.workspace = true
+libz-rs-sys = { version = "0.5", default-features = false, features = ["rust-allocator"] }
