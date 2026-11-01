@@ -55,6 +55,7 @@ impl Image {
         }
         let mut img = Image { data, base, sections, imports: HashMap::new() };
         img.read_imports(opt);
+        img.read_delay_imports(opt);
         img
     }
 
@@ -101,6 +102,42 @@ impl Image {
                 i += 1;
             }
             d += 20;
+        }
+    }
+
+    /// Delay-load imports (descriptor attrs bit 0 = RVAs, else VAs).
+    fn read_delay_imports(&mut self, opt: usize) {
+        let dir_rva = u32_at(&self.data, opt + 96 + 13 * 8);
+        if dir_rva == 0 {
+            return;
+        }
+        let Some(mut d) = self.off(dir_rva) else { return };
+        loop {
+            let attrs = u32_at(&self.data, d);
+            let name = u32_at(&self.data, d + 4);
+            let iat = u32_at(&self.data, d + 12);
+            let int = u32_at(&self.data, d + 16);
+            if name == 0 {
+                break;
+            }
+            let base = self.base;
+            let fix = move |v: u32| if attrs & 1 == 0 { v.wrapping_sub(base) } else { v };
+            let dll = self.cstr(fix(name)).unwrap_or_default();
+            let mut i = 0;
+            while let Some(to) = self.off(fix(int) + i * 4) {
+                let t = u32_at(&self.data, to);
+                if t == 0 {
+                    break;
+                }
+                let f = if t & 0x8000_0000 != 0 {
+                    format!("#{}", t & 0xFFFF)
+                } else {
+                    self.cstr(fix(t) + 2).unwrap_or_default()
+                };
+                self.imports.insert(base + fix(iat) + i * 4, format!("{dll}!{f} (delay)"));
+                i += 1;
+            }
+            d += 32;
         }
     }
 
@@ -269,6 +306,34 @@ fn main() {
                     _ => false,
                 });
                 if hit {
+                    let f = func_of(ins.ip()).unwrap_or(0);
+                    print!("  [f 0x{f:X}] ");
+                    print_ins(&img, &mut fmt, ins);
+                }
+            }
+        }
+        "imp" => {
+            // em4r-re <exe> imp <FunctionName>: every reference to that import slot.
+            let want = args[3].to_lowercase();
+            let mut slots: Vec<(u32, String)> = img
+                .imports
+                .iter()
+                .filter(|(_, n)| {
+                    let f = n.split('!').nth(1).unwrap_or("").split(' ').next().unwrap_or("");
+                    f.to_lowercase() == want
+                })
+                .map(|(a, n)| (*a, n.clone()))
+                .collect();
+            slots.sort();
+            for (slot, name) in slots {
+                println!("{name} @ Slot 0x{slot:X}");
+                for ins in all.iter().filter(|ins| {
+                    (0..ins.op_count()).any(|k| match ins.op_kind(k) {
+                        OpKind::Memory => ins.memory_displacement64() == slot as u64,
+                        OpKind::Immediate32 => ins.immediate(k) == slot as u64,
+                        _ => false,
+                    })
+                }) {
                     let f = func_of(ins.ip()).unwrap_or(0);
                     print!("  [f 0x{f:X}] ");
                     print_ins(&img, &mut fmt, ins);

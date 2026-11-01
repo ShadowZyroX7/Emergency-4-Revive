@@ -56,6 +56,9 @@ impl ReviveConfig {
         self.set("game", "skip_intro", value(c.game.skip_intro));
         self.set("game", "fast_logfile", value(c.game.fast_logfile));
         self.set("game", "fast_exit", value(c.game.fast_exit));
+        self.set("window", "borderless", value(c.window.borderless));
+        self.set("window", "pause_in_background", value(c.window.pause_in_background));
+        self.set("window", "allow_system_keys", value(c.window.allow_system_keys));
         self.set("perf", "frame_limit", value(c.perf.frame_limit as i64));
         self.set("perf", "vsync", value(c.perf.vsync as i64));
         self.set("perf", "missing_file_cache", value(c.perf.missing_file_cache));

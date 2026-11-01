@@ -974,6 +974,7 @@ dependencies = [
  "em4r-gl",
  "em4r-perf",
  "em4r-prof",
+ "em4r-window",
  "em4r-zlib",
 ]
 
@@ -986,6 +987,13 @@ dependencies = [
 
 [[package]]
 name = "em4r-smoke"
+version = "0.1.0"
+dependencies = [
+ "em4r-core",
+]
+
+[[package]]
+name = "em4r-window"
 version = "0.1.0"
 dependencies = [
  "em4r-core",

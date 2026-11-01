@@ -7,6 +7,7 @@ members = [
     "crates/em4r-zlib",
     "crates/em4r-perf",
     "crates/em4r-prof",
+    "crates/em4r-window",
     "crates/em4r-proxy",
     "crates/em4r-smoke",
     "crates/em4r-launcher",
@@ -26,6 +27,7 @@ em4r-fx = { path = "crates/em4r-fx" }
 em4r-zlib = { path = "crates/em4r-zlib" }
 em4r-perf = { path = "crates/em4r-perf" }
 em4r-prof = { path = "crates/em4r-prof" }
+em4r-window = { path = "crates/em4r-window" }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
 

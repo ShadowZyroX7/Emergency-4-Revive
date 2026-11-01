@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     /// Folder of the last played mod; empty = original EM4.
@@ -12,6 +12,14 @@ pub struct Settings {
     pub game_dir: Option<PathBuf>,
     /// Last chosen start mode.
     pub last_mode: Option<em4r_core::launch::StartMode>,
+    /// Start through Steam (Steam overlay, F12 screenshots).
+    pub launch_via_steam: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { last_mod: String::new(), game_dir: None, last_mode: None, launch_via_steam: true }
+    }
 }
 
 impl Settings {
@@ -51,6 +59,7 @@ mod tests {
             last_mod: "AUBMP".into(),
             game_dir: None,
             last_mode: Some(em4r_core::launch::StartMode::FreeplayEndless),
+            launch_via_steam: false,
         };
         s.save(&p);
         assert_eq!(Settings::load(&p), s);

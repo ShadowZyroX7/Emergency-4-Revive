@@ -234,6 +234,38 @@ impl SettingsPage {
             ui.checkbox(&mut r.cfg.game.fast_exit, "Schnelles Beenden (Einstellungen speichern, sofort schließen)");
 
             ui.add_space(8.0);
+            ui.label(RichText::new("Fenster").strong());
+            ui.checkbox(&mut r.cfg.window.borderless, "Randloses Vollbild (schnelles Alt+Tab, Screenshots funktionieren)")
+                .on_hover_text("Keine Auflösungsumschaltung und kein Minimieren beim Wechseln in andere Fenster.");
+            if r.cfg.window.borderless && self.fullscreen {
+                if let Some(desk) = em4cfg::desktop_mode() {
+                    if desk != self.resolution {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.colored_label(
+                                WARN,
+                                format!(
+                                    "Greift nur bei Desktop-Auflösung ({} × {}), eingestellt ist {} × {}.",
+                                    desk.0, desk.1, self.resolution.0, self.resolution.1
+                                ),
+                            );
+                            if ui.small_button("Desktop-Auflösung übernehmen").clicked() {
+                                self.resolution = desk;
+                                if !self.modes.contains(&desk) {
+                                    self.modes.push(desk);
+                                    self.modes.sort();
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+            ui.add_enabled(
+                r.cfg.window.borderless,
+                egui::Checkbox::new(&mut r.cfg.window.pause_in_background, "Im Hintergrund pausieren"),
+            );
+            ui.checkbox(&mut r.cfg.window.allow_system_keys, "Druck-Taste und Windows-Taste im Spiel nicht sperren");
+
+            ui.add_space(8.0);
             ui.label(RichText::new("Diagnose").strong());
             ui.checkbox(&mut r.cfg.stats.enabled, "FPS-Messung (em4revive_stats.csv)");
             ui.checkbox(&mut r.cfg.crash.minidump, "Absturzberichte schreiben");

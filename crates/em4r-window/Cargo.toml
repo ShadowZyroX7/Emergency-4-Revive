@@ -1,0 +1,9 @@
+[package]
+name = "em4r-window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "EM4 Revive – borderless fullscreen and fast Alt+Tab"
+
+[dependencies]
+em4r-core.workspace = true

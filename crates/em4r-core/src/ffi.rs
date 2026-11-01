@@ -284,3 +284,22 @@ mod tests {
         assert_eq!(core::mem::size_of::<MODULEINFO>(), 12);
     }
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MEMORYSTATUSEX {
+    pub dwLength: u32,
+    pub dwMemoryLoad: u32,
+    pub ullTotalPhys: u64,
+    pub ullAvailPhys: u64,
+    pub ullTotalPageFile: u64,
+    pub ullAvailPageFile: u64,
+    pub ullTotalVirtual: u64,
+    pub ullAvailVirtual: u64,
+    pub ullAvailExtendedVirtual: u64,
+}
+
+#[link(name = "kernel32")]
+extern "system" {
+    pub fn GlobalMemoryStatusEx(status: *mut MEMORYSTATUSEX) -> BOOL;
+}

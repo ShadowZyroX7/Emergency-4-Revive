@@ -18,6 +18,7 @@ pub struct Config {
     pub profiler: Profiler,
     pub game: Game,
     pub fx: Fx,
+    pub window: Window,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,6 +60,23 @@ impl Default for Fx {
             dof_start: 9000.0,
             dof_end: 22000.0,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Window {
+    /// true = randloses Vollbild statt exklusivem Vollbild.
+    pub borderless: bool,
+    /// Im Hintergrund pausieren (wie das Original), aber ohne Minimieren.
+    pub pause_in_background: bool,
+    /// Druck-Taste/Windows-Taste nicht sperren (Spiel meldet sonst "Bildschirmschoner läuft").
+    pub allow_system_keys: bool,
+}
+
+impl Default for Window {
+    fn default() -> Self {
+        Self { borderless: true, pause_in_background: true, allow_system_keys: true }
     }
 }
 
@@ -146,6 +164,7 @@ impl Default for Config {
             profiler: Profiler::default(),
             game: Game::default(),
             fx: Fx::default(),
+            window: Window::default(),
         }
     }
 }

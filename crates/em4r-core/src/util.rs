@@ -84,6 +84,15 @@ pub fn process_memory() -> Option<(usize, usize)> {
     (ok != 0).then_some((c.PrivateUsage, c.WorkingSetSize))
 }
 
+
+/// (used, total) user address space of this process in bytes. For a 32-bit
+/// Large-Address-Aware process on 64-bit Windows the total is 4 GB.
+pub fn address_space() -> Option<(u64, u64)> {
+    let mut s = MEMORYSTATUSEX { dwLength: core::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
+    // SAFETY: valid struct with correct length.
+    let ok = unsafe { GlobalMemoryStatusEx(&mut s) };
+    (ok != 0 && s.ullTotalVirtual > 0).then(|| (s.ullTotalVirtual - s.ullAvailVirtual, s.ullTotalVirtual))
+}
 pub fn local_time() -> SYSTEMTIME {
     let mut st = SYSTEMTIME::default();
     // SAFETY: valid out pointer.

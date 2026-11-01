@@ -165,6 +165,14 @@ pub fn display_modes() -> Vec<(u32, u32)> {
     modes
 }
 
+/// Current resolution of the primary monitor.
+pub fn desktop_mode() -> Option<(u32, u32)> {
+    let mut dm = DevModeW::new();
+    // SAFETY: valid struct with dmSize set; ENUM_CURRENT_SETTINGS.
+    let ok = unsafe { EnumDisplaySettingsW(core::ptr::null(), 0xFFFF_FFFF, &mut dm) } != 0;
+    (ok && dm.pels_width > 0).then_some((dm.pels_width, dm.pels_height))
+}
+
 /// `DEVMODEW` (220 bytes); only the fields we read are named.
 #[repr(C)]
 struct DevModeW {

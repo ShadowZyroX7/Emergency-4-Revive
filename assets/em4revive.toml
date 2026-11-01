@@ -21,6 +21,18 @@ fast_logfile = true
 # fehlerhafte Aufräumen der Engine laufen zu lassen (das stürzt mit vielen Mods ab).
 fast_exit = true
 
+[window]
+# Randloses Vollbild: keine Auflösungsumschaltung, kein Minimieren -> Alt+Tab geht sofort,
+# Screenshots (Druck, Win+Umschalt+S) funktionieren. Greift nur, wenn die Spielauflösung
+# der Desktop-Auflösung entspricht; sonst bleibt das alte exklusive Vollbild.
+borderless = true
+# Im Hintergrund pausieren (wie das Original). false = Spiel läuft weiter, während ein
+# anderes Fenster aktiv ist.
+pause_in_background = true
+# Das Spiel meldet Windows sonst "Bildschirmschoner läuft" und sperrt damit
+# Druck-Taste und Windows-Tastenkürzel.
+allow_system_keys = true
+
 [perf]
 # Windows-Timer auf 1 ms stellen (genaueres Timing, weniger Mikroruckler).
 high_res_timer = true

@@ -10,6 +10,8 @@ pub struct Sample {
     pub fps: f64,
     pub low: f64,
     pub ram_mb: f64,
+    /// Used 32-bit address space (0 in files from older versions).
+    pub addr_mb: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -57,6 +59,10 @@ impl Session {
     pub fn ram_peak(&self) -> Option<f64> {
         self.samples.iter().map(|s| s.ram_mb).fold(None, |m, v| Some(m.map_or(v, |m: f64| m.max(v))))
     }
+    /// Peak used address space; None for files without that column.
+    pub fn address_peak(&self) -> Option<f64> {
+        self.samples.iter().map(|s| s.addr_mb).filter(|&v| v > 0.0).fold(None, |m, v| Some(m.map_or(v, |m: f64| m.max(v))))
+    }
 }
 
 fn avg(it: impl Iterator<Item = f64>) -> Option<f64> {
@@ -75,6 +81,7 @@ pub fn parse_csv(text: &str) -> Vec<Sample> {
                 fps: c[1],
                 low: if c[2].is_finite() { c[2] } else { 0.0 },
                 ram_mb: if c[5].is_finite() { c[5] } else { 0.0 },
+                addr_mb: c.get(8).copied().filter(|v| v.is_finite()).unwrap_or(0.0),
             })
         })
         .collect()
@@ -218,6 +225,13 @@ mod tests {
         4,4;0,6;0,6;1635,84;0;114;119;0,04\n\
         65,8;100,0;50,0;6,89;88;452;465;0,03\n\
         66,8;60,0;30,0;3,61;88;900;465;0,18\n";
+
+    #[test]
+    fn address_space_column() {
+        assert_eq!(Session { samples: parse_csv(CSV), when: None, map_load_s: None }.address_peak(), None);
+        let csv = "h\n1,0;60,0;40,0;1;0;800;700;0;1500\n2,0;60,0;40,0;1;0;800;700;0;1730\n";
+        assert_eq!(Session { samples: parse_csv(csv), when: None, map_load_s: None }.address_peak(), Some(1730.0));
+    }
 
     #[test]
     fn session_numbers() {

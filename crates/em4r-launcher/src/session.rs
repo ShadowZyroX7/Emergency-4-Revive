@@ -2,7 +2,7 @@
 
 use em4r_core::launch::{LaunchRequest, StartMode};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use crate::process::GameProcess;
 use std::time::{Instant, SystemTime};
 
 /// What to start.
@@ -26,13 +26,15 @@ pub fn arguments(target: &Target) -> Vec<String> {
 }
 
 pub struct Running {
-    pub child: Child,
+    pub process: GameProcess,
     pub started: Instant,
     pub started_wall: SystemTime,
     pub target_label: String,
 }
 
-pub fn launch(game_dir: &Path, target: &Target, mode: StartMode, label: &str) -> std::io::Result<Running> {
+/// `via_steam`: start through Steam (overlay, F12 screenshots); falls back to
+/// a direct start when Steam is not installed.
+pub fn launch(game_dir: &Path, target: &Target, mode: StartMode, label: &str, via_steam: bool) -> std::io::Result<Running> {
     // The start request for the mod: written just before the start, read
     // and deleted by the mod; "Hauptmenü" means no request at all.
     let request = game_dir.join(em4r_core::launch::FILE_NAME);
@@ -40,16 +42,21 @@ pub fn launch(game_dir: &Path, target: &Target, mode: StartMode, label: &str) ->
     if mode != StartMode::Menu {
         LaunchRequest::new(mode).write(game_dir)?;
     }
-    let spawned = Command::new(game_dir.join("Em4.exe")).args(arguments(target)).current_dir(game_dir).spawn();
-    let child = match spawned {
-        Ok(c) => c,
+    let args = arguments(target);
+    let steam = if via_steam { crate::process::steam_exe() } else { None };
+    let spawned = match &steam {
+        Some(s) => GameProcess::spawn_via_steam(s, game_dir, &args),
+        None => GameProcess::spawn_direct(game_dir, &args),
+    };
+    let process = match spawned {
+        Ok(p) => p,
         Err(e) => {
             let _ = std::fs::remove_file(&request);
             return Err(e);
         }
     };
     let label = if mode == StartMode::Menu { label.to_string() } else { format!("{label} – {}", mode.label()) };
-    Ok(Running { child, started: Instant::now(), started_wall: SystemTime::now(), target_label: label })
+    Ok(Running { process, started: Instant::now(), started_wall: SystemTime::now(), target_label: label })
 }
 
 #[derive(Debug, Clone, PartialEq)]

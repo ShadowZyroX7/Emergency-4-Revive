@@ -4,7 +4,7 @@ pub mod limiter;
 pub mod stats;
 
 use em4r_core::hook::IatHook;
-use em4r_core::util::{process_memory, qpc_now, qpc_to_ms};
+use em4r_core::util::{address_space, process_memory, qpc_now, qpc_to_ms};
 use em4r_core::{iat_hook, info, warn};
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -19,8 +19,8 @@ type WglSwapInterval = unsafe extern "system" fn(i32) -> em4r_core::ffi::BOOL;
 static ORIG_SWAP: AtomicUsize = AtomicUsize::new(0);
 static ORIG_WGL_SWAP: AtomicUsize = AtomicUsize::new(0);
 
-/// Address-space warning threshold for a 32-bit LAA process (4 GB max).
-const MEMORY_WARN_BYTES: usize = 3_400 * 1024 * 1024;
+/// Warn when this share of the 32-bit address space (4 GB with LAA) is used.
+const MEMORY_WARN_SHARE: f64 = 0.85;
 
 struct State {
     stats_enabled: bool,
@@ -36,6 +36,8 @@ struct State {
     draws: Vec<u32>,
     intervals: u64,
     memory_warned: bool,
+    address_peak_mb: f64,
+    address_total_mb: f64,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -61,6 +63,8 @@ pub fn configure(cfg: &em4r_core::Config, game_dir: &Path) {
         draws: Vec::with_capacity(512),
         intervals: 0,
         memory_warned: false,
+        address_peak_mb: 0.0,
+        address_total_mb: 0.0,
     };
     if cfg.perf.frame_limit > 0 {
         info!("FPS-Limit: {}", cfg.perf.frame_limit);
@@ -76,7 +80,7 @@ fn open_csv(path: &Path) -> Option<BufWriter<File>> {
             let mut w = BufWriter::new(f);
             let _ = writeln!(
                 w,
-                "zeit_s;fps_avg;fps_1pct_low;frametime_max_ms;draw_calls_avg;ram_privat_mb;ram_working_set_mb;bildwechsel_wartezeit_ms"
+                "zeit_s;fps_avg;fps_1pct_low;frametime_max_ms;draw_calls_avg;ram_privat_mb;ram_working_set_mb;bildwechsel_wartezeit_ms;adressraum_mb"
             );
             Some(w)
         }
@@ -176,12 +180,19 @@ fn flush_interval(st: &mut State, now: i64) {
     let (private_mb, ws_mb) = process_memory()
         .map(|(p, w)| (p as f64 / 1048576.0, w as f64 / 1048576.0))
         .unwrap_or((0.0, 0.0));
+    let (addr_mb, addr_total_mb) = address_space()
+        .map(|(u, t)| (u as f64 / 1048576.0, t as f64 / 1048576.0))
+        .unwrap_or((0.0, 0.0));
+    if addr_mb > st.address_peak_mb {
+        st.address_peak_mb = addr_mb;
+    }
+    st.address_total_mb = addr_total_mb;
     let t = qpc_to_ms(now - st.start) / 1000.0;
     if let Some(w) = st.csv.as_mut() {
         // German Excel expects ';' as separator and ',' as decimal mark.
         let line = format!(
-            "{:.1};{:.1};{:.1};{:.2};{:.0};{:.0};{:.0};{:.2}",
-            t, s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb, ws_mb, swap_ms
+            "{:.1};{:.1};{:.1};{:.2};{:.0};{:.0};{:.0};{:.2};{:.0}",
+            t, s.fps_avg, s.fps_1pct_low, s.frametime_max_ms, s.draws_avg, private_mb, ws_mb, swap_ms, addr_mb
         )
         .replace('.', ",");
         let _ = writeln!(w, "{line}");
@@ -191,22 +202,27 @@ fn flush_interval(st: &mut State, now: i64) {
     if st.intervals % 10 == 1 {
         let frame_ms = 1000.0 / s.fps_avg.max(0.001);
         info!(
-            "FPS {:.1} (1%-Low {:.1}, max Frametime {:.1} ms) | Draw-Calls {:.0} | RAM {:.0} MB | Bildwechsel {:.1} ms von {:.1} ms | gesparte Dateisuchen {}",
+            "FPS {:.1} (1%-Low {:.1}, max Frametime {:.1} ms) | Draw-Calls {:.0} | RAM {:.0} MB | Adressraum {:.0}/{:.0} MB (Spitze {:.0}) | Bildwechsel {:.1} ms von {:.1} ms | gesparte Dateisuchen {}",
             s.fps_avg,
             s.fps_1pct_low,
             s.frametime_max_ms,
             s.draws_avg,
             private_mb,
+            addr_mb,
+            addr_total_mb,
+            st.address_peak_mb,
             swap_ms,
             frame_ms,
             em4r_core::counters::FS_CACHE_HITS.load(Ordering::Relaxed)
         );
     }
-    if !st.memory_warned && private_mb as usize * 1048576 > MEMORY_WARN_BYTES {
+    if !st.memory_warned && addr_total_mb > 0.0 && addr_mb > addr_total_mb * MEMORY_WARN_SHARE {
         st.memory_warned = true;
         warn!(
-            "Speicherverbrauch {:.0} MB nähert sich der 4-GB-Grenze (32-bit). Absturzgefahr bei weiteren Mods/Karten!",
-            private_mb
+            "Adressraum zu {:.0} % belegt ({:.0} von {:.0} MB, 32-bit-Grenze). Absturzgefahr bei weiteren Mods/Karten!",
+            addr_mb * 100.0 / addr_total_mb,
+            addr_mb,
+            addr_total_mb
         );
     }
 }

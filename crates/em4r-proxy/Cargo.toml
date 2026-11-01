@@ -16,3 +16,4 @@ em4r-fx.workspace = true
 em4r-zlib.workspace = true
 em4r-perf.workspace = true
 em4r-prof.workspace = true
+em4r-window.workspace = true

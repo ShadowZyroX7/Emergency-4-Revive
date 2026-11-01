@@ -57,8 +57,15 @@ impl StatsPage {
                 tile(ui, "Ø 1%-Low", &f(s.avg_low(), ""));
                 tile(ui, "Schlechtester Moment", &f(s.worst_low(), " FPS"));
                 tile(ui, "RAM-Spitze", &f(s.ram_peak(), " MB"));
+                tile(ui, "Adressraum-Spitze", &f(s.address_peak(), " / 4096 MB"));
                 tile(ui, "Karte geladen in", &s.map_load_s.map(|v| format!("{v} s")).unwrap_or_else(|| "–".into()));
             });
+            if s.address_peak().is_some_and(|v| v > 4096.0 * 0.85) {
+                ui.colored_label(
+                    Color32::from_rgb(230, 170, 60),
+                    "Der 32-bit-Adressraum war fast voll – mit weiteren Mods/Karten droht ein Absturz.",
+                );
+            }
             ui.add_space(10.0);
             fps_chart(ui, s);
             ui.horizontal(|ui| {

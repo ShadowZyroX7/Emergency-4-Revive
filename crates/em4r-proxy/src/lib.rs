@@ -122,6 +122,14 @@ fn init(module: HMODULE) {
     );
     em4r_gl::configure(&cfg);
     hooks.extend(em4r_gl::hooks());
+    // Borderless fullscreen / fast Alt+Tab / free system keys.
+    if em4r_window::wanted(&cfg.window) {
+        em4r_window::configure(&cfg.window);
+        hooks.extend(em4r_window::hooks());
+        if is_em4_exe() {
+            em4r_window::patch_em4();
+        }
+    }
     // The direct start needs frame timestamps to know when the menu is up.
     if em4r_perf::wants_swap_hook(&cfg) || autostart::pending() || fx_on {
         em4r_perf::configure(&cfg, &game_dir);

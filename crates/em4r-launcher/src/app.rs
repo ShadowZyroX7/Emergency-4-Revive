@@ -143,7 +143,7 @@ impl LauncherApp {
         };
         self.settings.last_mode = Some(self.mode);
         self.settings.save(&self.settings_path);
-        match session::launch(&dir, &target, self.mode, &label) {
+        match session::launch(&dir, &target, self.mode, &label, self.settings.launch_via_steam) {
             Ok(run) => {
                 self.running = Some(run);
                 self.last = None;
@@ -155,7 +155,10 @@ impl LauncherApp {
 
     fn poll_running(&mut self) {
         let finished = match self.running.as_mut() {
-            Some(run) => matches!(run.child.try_wait(), Ok(Some(_)) | Err(_)),
+            Some(run) => match self.game_dir.as_deref() {
+                Some(dir) => run.process.finished(dir),
+                None => true,
+            },
             None => false,
         };
         if finished {
@@ -420,13 +423,27 @@ impl LauncherApp {
                 ui.label(RichText::new("Ohne Intro – der Mod-Wechsel im Spiel entfällt.").small().color(MUTED));
             });
         });
+        ui.add_space(6.0);
+        let running = self.running.is_some();
+        let steam_box = ui.add_enabled(
+            !running,
+            egui::Checkbox::new(&mut self.settings.launch_via_steam, "Über Steam starten (Steam-Overlay, F12-Screenshots)"),
+        );
+        if steam_box.changed() {
+            self.settings.save(&self.settings_path);
+        }
 
         ui.add_space(14.0);
         if let Some(run) = &self.running {
             ui.horizontal(|ui| {
                 ui.add(egui::Spinner::new());
                 let s = run.started.elapsed().as_secs();
-                ui.label(format!("{} läuft seit {}:{:02}", run.target_label, s / 60, s % 60));
+                if run.process.waiting_for_steam() {
+                    ui.label(format!("Steam startet {} … ({s} s)", run.target_label));
+                } else {
+                    let via = if run.process.via_steam() { " (über Steam)" } else { "" };
+                    ui.label(format!("{} läuft seit {}:{:02}{via}", run.target_label, s / 60, s % 60));
+                }
             });
         } else if let Some(sum) = &self.last {
             summary_box(ui, sum);
