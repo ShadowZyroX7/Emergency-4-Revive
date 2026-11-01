@@ -76,7 +76,7 @@ pub struct Window {
 
 impl Default for Window {
     fn default() -> Self {
-        Self { borderless: true, pause_in_background: true, allow_system_keys: true }
+        Self { borderless: true, pause_in_background: false, allow_system_keys: true }
     }
 }
 

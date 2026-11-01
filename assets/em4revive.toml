@@ -26,9 +26,9 @@ fast_exit = true
 # Screenshots (Druck, Win+Umschalt+S) funktionieren. Greift nur, wenn die Spielauflösung
 # der Desktop-Auflösung entspricht; sonst bleibt das alte exklusive Vollbild.
 borderless = true
-# Im Hintergrund pausieren (wie das Original). false = Spiel läuft weiter, während ein
+# Im Hintergrund pausieren wie das Original (true). false = Spiel läuft weiter, während ein
 # anderes Fenster aktiv ist.
-pause_in_background = true
+pause_in_background = false
 # Das Spiel meldet Windows sonst "Bildschirmschoner läuft" und sperrt damit
 # Druck-Taste und Windows-Tastenkürzel.
 allow_system_keys = true
