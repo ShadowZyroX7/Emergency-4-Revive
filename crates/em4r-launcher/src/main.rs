@@ -5,7 +5,6 @@ mod app;
 mod dds;
 mod em4cfg;
 mod mods;
-mod process;
 mod revive_cfg;
 mod session;
 mod settings;
