@@ -7,17 +7,14 @@
 //! The repository is fixed at build time (`EM4R_GITHUB_REPO`, "owner/name").
 //! Without it, the launcher never goes online.
 
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
-use std::io::{Read, Write};
+use crate::github;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 pub const REPO: Option<&str> = option_env!("EM4R_GITHUB_REPO");
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const ASSET_NAME: &str = "EM4Revive-Setup.exe";
-const USER_AGENT: &str = concat!("EM4Revive-Launcher/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Release {
@@ -40,20 +37,6 @@ pub enum State {
     Failed(String),
 }
 
-#[derive(Deserialize)]
-struct ApiRelease {
-    tag_name: String,
-    assets: Vec<ApiAsset>,
-}
-
-#[derive(Deserialize)]
-struct ApiAsset {
-    name: String,
-    browser_download_url: String,
-    size: u64,
-    digest: Option<String>,
-}
-
 /// "v1.2.3" → (1, 2, 3). Anything else is not a version we act on.
 pub fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
     let mut parts = text.trim().trim_start_matches(['v', 'V']).split('.').map(|p| p.parse().ok());
@@ -62,7 +45,7 @@ pub fn parse_version(text: &str) -> Option<(u32, u32, u32)> {
 }
 
 fn release_from_api(json: &str, repo: &str, current: &str) -> Result<Option<Release>, String> {
-    let api: ApiRelease = serde_json::from_str(json).map_err(|e| format!("Unerwartete Antwort von GitHub: {e}"))?;
+    let api: github::ApiRelease = serde_json::from_str(json).map_err(|e| format!("Unerwartete Antwort von GitHub: {e}"))?;
     let latest = parse_version(&api.tag_name).ok_or_else(|| format!("Ungültige Versionsnummer: {}", api.tag_name))?;
     let installed = parse_version(current).ok_or("Ungültige eigene Versionsnummer")?;
     if latest <= installed {
@@ -73,83 +56,23 @@ fn release_from_api(json: &str, repo: &str, current: &str) -> Result<Option<Rele
         .into_iter()
         .find(|a| a.name == ASSET_NAME)
         .ok_or_else(|| format!("Release {} enthält keine {ASSET_NAME}", api.tag_name))?;
-    let expected_prefix = format!("https://github.com/{repo}/releases/download/");
-    if !asset.browser_download_url.starts_with(&expected_prefix) {
+    if !asset.is_from(repo) {
         return Err("Download-Adresse gehört nicht zu diesem Projekt.".into());
     }
+    let sha256 = asset.sha256();
     Ok(Some(Release {
         version: format!("{}.{}.{}", latest.0, latest.1, latest.2),
         url: asset.browser_download_url,
         size: asset.size,
-        sha256: asset.digest.and_then(|d| d.strip_prefix("sha256:").map(str::to_ascii_lowercase)),
+        sha256,
     }))
 }
 
-fn agent() -> Result<ureq::Agent, String> {
-    let tls = native_tls::TlsConnector::new().map_err(|e| e.to_string())?;
-    Ok(ureq::AgentBuilder::new()
-        .tls_connector(Arc::new(tls))
-        .https_only(true)
-        .user_agent(USER_AGENT)
-        .timeout_connect(Duration::from_secs(10))
-        .timeout_read(Duration::from_secs(30))
-        .build())
-}
-
 fn latest_release(repo: &str) -> Result<Option<Release>, String> {
-    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
-    match agent()?.get(&url).set("Accept", "application/vnd.github+json").call() {
-        Ok(response) => {
-            let body = response.into_string().map_err(|e| e.to_string())?;
-            release_from_api(&body, repo, CURRENT_VERSION)
-        }
-        // No published release yet.
-        Err(ureq::Error::Status(404, _)) => Ok(None),
-        Err(e) => Err(e.to_string()),
+    match github::latest_release_json(repo)? {
+        Some(body) => release_from_api(&body, repo, CURRENT_VERSION),
+        None => Ok(None),
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Download to `dest`. The file only appears there once size and hash match.
-fn download(url: &str, size: u64, sha256: Option<&str>, dest: &Path, mut progress: impl FnMut(u64)) -> Result<(), String> {
-    let part = dest.with_extension("part");
-    let response = agent()?.get(url).call().map_err(|e| e.to_string())?;
-    let mut reader = response.into_reader();
-    let mut file = std::fs::File::create(&part).map_err(|e| e.to_string())?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
-    let mut done = 0u64;
-    let copied: Result<(), String> = loop {
-        let n = match reader.read(&mut buffer) {
-            Ok(0) => break Ok(()),
-            Ok(n) => n,
-            Err(e) => break Err(e.to_string()),
-        };
-        if let Err(e) = file.write_all(&buffer[..n]) {
-            break Err(e.to_string());
-        }
-        hasher.update(&buffer[..n]);
-        done += n as u64;
-        progress(done);
-    };
-    drop(file);
-    let actual = hex(&hasher.finalize());
-    let verified = copied.and_then(|()| {
-        if done != size {
-            Err(format!("Download unvollständig ({done} von {size} Bytes)."))
-        } else if sha256.is_some_and(|expected| expected != actual) {
-            Err("Download beschädigt (Prüfsumme stimmt nicht).".to_owned())
-        } else {
-            std::fs::rename(&part, dest).map_err(|e| e.to_string())
-        }
-    });
-    if verified.is_err() {
-        let _ = std::fs::remove_file(&part);
-    }
-    verified
 }
 
 /// Remove setups of earlier updates from the temp folder.
@@ -203,7 +126,7 @@ impl Updater {
         let this = self.clone();
         std::thread::spawn(move || {
             let path = std::env::temp_dir().join(format!("EM4Revive-Setup-{}.exe", release.version));
-            let result = download(&release.url, release.size, release.sha256.as_deref(), &path, |done| {
+            let result = github::download(&release.url, release.size, release.sha256.as_deref(), &path, &AtomicBool::new(false), |done| {
                 this.set(State::Downloading { release: release.clone(), done });
             });
             this.set(match result {
@@ -273,29 +196,5 @@ mod tests {
     fn release_without_setup_is_an_error() {
         let body = r#"{"tag_name":"v0.3.0","assets":[]}"#;
         assert!(release_from_api(body, REPO_T, "0.2.0").is_err());
-    }
-
-    /// Real network: TLS, the GitHub API, the redirect to the CDN and hash
-    /// checking, against a public project. `cargo test -- --ignored`.
-    #[test]
-    #[ignore]
-    fn live_download_from_public_release() {
-        let body = agent()
-            .unwrap()
-            .get("https://api.github.com/repos/BurntSushi/ripgrep/releases/latest")
-            .call()
-            .unwrap()
-            .into_string()
-            .unwrap();
-        let api: ApiRelease = serde_json::from_str(&body).unwrap();
-        let asset = api.assets.iter().min_by_key(|a| a.size).unwrap();
-        let digest = asset.digest.as_deref().and_then(|d| d.strip_prefix("sha256:"));
-        let dest = std::env::temp_dir().join(format!("em4r_live_{}.bin", std::process::id()));
-        download(&asset.browser_download_url, asset.size, digest, &dest, |_| {}).unwrap();
-        assert_eq!(std::fs::metadata(&dest).unwrap().len(), asset.size);
-        std::fs::remove_file(&dest).unwrap();
-        // A wrong hash must not leave a file behind.
-        assert!(download(&asset.browser_download_url, asset.size, Some("00"), &dest, |_| {}).is_err());
-        assert!(!dest.exists());
     }
 }

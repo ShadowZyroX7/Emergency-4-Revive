@@ -5,6 +5,7 @@ use crate::session::{self, Ending, Running, Summary, Target};
 use crate::settings::{self, Settings};
 use crate::settings_page::SettingsPage;
 use crate::stats_page::StatsPage;
+use crate::submods_page::SubmodsPage;
 use crate::update::{self, Updater};
 use em4r_core::launch::StartMode;
 use eframe::egui::{self, Color32, RichText, Vec2};
@@ -25,6 +26,7 @@ enum Tab {
     Spielen,
     Einstellungen,
     Statistik,
+    Submods,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -48,6 +50,8 @@ pub struct LauncherApp {
     tab: Tab,
     settings_page: Option<SettingsPage>,
     stats_page: Option<StatsPage>,
+    /// Created on first visit, then kept so downloads survive tab changes.
+    submods_page: Option<SubmodsPage>,
     updater: Updater,
     /// The current update should be installed (automatic, or button clicked).
     install_update: bool,
@@ -76,6 +80,7 @@ impl LauncherApp {
         let mut app = Self {
             updater,
             install_update: false,
+            submods_page: None,
             game_dir,
             settings_path,
             settings: settings.clone(),
@@ -97,6 +102,12 @@ impl LauncherApp {
             if let Some(dir) = &app.game_dir {
                 app.settings_page = Some(SettingsPage::new(dir));
                 app.tab = Tab::Einstellungen;
+            }
+        }
+        if std::env::args().any(|a| a.eq_ignore_ascii_case("--submods")) {
+            if let Some(dir) = &app.game_dir {
+                app.submods_page = Some(SubmodsPage::new(dir, cc.egui_ctx.clone()));
+                app.tab = Tab::Submods;
             }
         }
         if std::env::args().any(|a| a.eq_ignore_ascii_case("--statistik")) {
@@ -180,6 +191,11 @@ impl LauncherApp {
         }
     }
 
+    /// Closing the launcher for an update has to wait for these.
+    fn update_blocked(&self) -> bool {
+        self.running.is_some() || self.submods_page.as_ref().is_some_and(SubmodsPage::busy)
+    }
+
     /// Moves an update forward. Never closes the launcher while a game runs.
     fn drive_update(&mut self, ctx: &egui::Context) {
         match self.updater.state() {
@@ -190,7 +206,7 @@ impl LauncherApp {
                     self.updater.start_download(release);
                 }
             }
-            update::State::Ready { release, path } if self.install_update && self.running.is_none() => {
+            update::State::Ready { release, path } if self.install_update && !self.update_blocked() => {
                 let Some(dir) = self.game_dir.clone() else { return };
                 self.settings.last_update_attempt = release.version;
                 self.settings.save(&self.settings_path);
@@ -213,8 +229,8 @@ impl LauncherApp {
                 let percent = done * 100 / release.size.max(1);
                 (format!("Update auf v{} wird geladen… {percent} %", release.version), false)
             }
-            update::State::Ready { release, .. } if self.running.is_some() => {
-                (format!("Update auf v{} wird nach dem Spielende installiert", release.version), false)
+            update::State::Ready { release, .. } if self.update_blocked() => {
+                (format!("Update auf v{} wird installiert, sobald Spiel und Downloads fertig sind", release.version), false)
             }
             update::State::Ready { release, .. } => (format!("Update auf v{} wird installiert…", release.version), false),
             _ => return,
@@ -236,6 +252,10 @@ impl eframe::App for LauncherApp {
         if self.running.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
         }
+        if self.submods_page.as_mut().is_some_and(SubmodsPage::poll) {
+            self.textures.clear();
+            self.refresh();
+        }
         self.drive_update(ctx);
         self.update_banner(ctx);
 
@@ -245,7 +265,7 @@ impl eframe::App for LauncherApp {
                 ui.label(RichText::new("Launcher").size(18.0).color(MUTED));
                 ui.add_space(24.0);
                 for (tab, label) in
-                    [(Tab::Spielen, "Spielen"), (Tab::Einstellungen, "Einstellungen"), (Tab::Statistik, "Statistik")]
+                    [(Tab::Spielen, "Spielen"), (Tab::Einstellungen, "Einstellungen"), (Tab::Statistik, "Statistik"), (Tab::Submods, "Submods")]
                 {
                     let active = self.tab == tab;
                     let text = RichText::new(label).size(16.0).color(if active { Color32::WHITE } else { MUTED });
@@ -265,6 +285,11 @@ impl eframe::App for LauncherApp {
                             Tab::Statistik => {
                                 if let Some(dir) = &self.game_dir {
                                     self.stats_page = Some(StatsPage::new(dir));
+                                }
+                            }
+                            Tab::Submods => {
+                                if let (None, Some(dir)) = (&self.submods_page, &self.game_dir) {
+                                    self.submods_page = Some(SubmodsPage::new(dir, ctx.clone()));
                                 }
                             }
                             Tab::Spielen => self.refresh_status(),
@@ -311,6 +336,16 @@ impl eframe::App for LauncherApp {
             });
         });
 
+        if self.tab == Tab::Submods {
+            let running = self.running.is_some();
+            egui::CentralPanel::default().show(ctx, |ui| match self.submods_page.as_mut() {
+                Some(p) => p.ui(ui, running),
+                None => {
+                    ui.colored_label(WARN, "Spielordner nicht gefunden.");
+                }
+            });
+            return;
+        }
         if self.tab == Tab::Statistik {
             egui::CentralPanel::default().show(ctx, |ui| match self.stats_page.as_mut() {
                 Some(p) => p.ui(ui),

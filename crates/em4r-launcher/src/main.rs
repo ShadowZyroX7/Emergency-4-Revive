@@ -4,6 +4,7 @@
 mod app;
 mod dds;
 mod em4cfg;
+mod github;
 mod mods;
 mod revive_cfg;
 mod session;
@@ -11,6 +12,8 @@ mod settings;
 mod settings_page;
 mod stats;
 mod stats_page;
+mod submods;
+mod submods_page;
 mod update;
 
 use eframe::egui;

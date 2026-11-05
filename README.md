@@ -21,6 +21,12 @@ Das Setup findet den Spielordner über Steam. Danach hält sich der Launcher sel
 Bei jedem Start sucht er nach einer neuen Version und installiert sie (abschaltbar unten im Launcher).
 Entfernen: Windows-Einstellungen → Apps → EM4 Revive.
 
+## Submods
+Der Launcher-Tab „Submods“ lädt zusätzliche Mods von ihrem GitHub-Projekt und hält sie aktuell.
+Die Liste steht in `crates/em4r-launcher/src/submods.rs` (`SUBMODS`). Ein Release einer Submod braucht
+ein `.7z`-Archiv mit der `e4mod.info` im Hauptverzeichnis oder in genau einem Unterordner; jede neue
+Versionsnummer (Tag) wird als Update angeboten. Spielstände aus `Save` bleiben bei Updates erhalten.
+
 ## Neue Version veröffentlichen
 ```powershell
 .\scripts\release.ps1 -Version 0.3.0

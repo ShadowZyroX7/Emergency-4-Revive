@@ -169,6 +169,8 @@ pub fn uninstall(dir: &Path) -> io::Result<()> {
             _ => {}
         }
     }
+    // Unfinished submod downloads can be large.
+    let _ = fs::remove_dir_all(dir.join("_em4revive_download"));
     let _ = fs::remove_file(backup.join(MARKER));
     Ok(())
 }
