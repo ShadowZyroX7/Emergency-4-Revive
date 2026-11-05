@@ -12,6 +12,11 @@ pub struct Settings {
     pub game_dir: Option<PathBuf>,
     /// Last chosen start mode.
     pub last_mode: Option<em4r_core::launch::StartMode>,
+    /// Ask before installing updates instead of doing it automatically.
+    pub manual_updates: bool,
+    /// Version the launcher last tried to update to. If it is still offered
+    /// after a restart, the attempt failed: ask instead of looping.
+    pub last_update_attempt: String,
 }
 
 impl Settings {
@@ -51,6 +56,7 @@ mod tests {
             last_mod: "AUBMP".into(),
             game_dir: None,
             last_mode: Some(em4r_core::launch::StartMode::FreeplayEndless),
+            ..Default::default()
         };
         s.save(&p);
         assert_eq!(Settings::load(&p), s);

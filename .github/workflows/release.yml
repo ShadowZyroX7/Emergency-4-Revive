@@ -1,0 +1,44 @@
+# Publishing a version: push a tag like v0.3.0 (scripts/release.ps1 does that).
+# The installed launchers pick the new release up on their next start.
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust target
+        run: rustup target add i686-pc-windows-msvc
+
+      - name: Tag must match the version in Cargo.toml
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "Tag $env:GITHUB_REF_NAME passt nicht zu Cargo.toml ($version)"
+          }
+
+      # The GL tests need a real graphics driver, which the runner does not have.
+      - name: Tests
+        run: cargo test --locked -p em4r-core -p em4r-launcher -p em4r-setup
+
+      - name: Build setup
+        shell: pwsh
+        run: .\scripts\package.ps1 -Repo $env:GITHUB_REPOSITORY -NoTests
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            dist\EM4Revive-Setup.exe dist\dinput8.pdb `
+            --title "EM4 Revive $env:GITHUB_REF_NAME" --generate-notes

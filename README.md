@@ -15,7 +15,25 @@ Kein Nachbau: Das Originalspiel (`Em4.exe`) bleibt unverändert. Eine kleine
 
 Alles ist in `em4revive.toml` einzeln schaltbar. Funktioniert zusammen mit ReShade.
 
-## Bauen & Installieren
+## Installation für Spieler
+`EM4Revive-Setup.exe` aus den [Releases](../../releases/latest) herunterladen und starten.
+Das Setup findet den Spielordner über Steam. Danach hält sich der Launcher selbst aktuell:
+Bei jedem Start sucht er nach einer neuen Version und installiert sie (abschaltbar unten im Launcher).
+Entfernen: Windows-Einstellungen → Apps → EM4 Revive.
+
+## Neue Version veröffentlichen
+```powershell
+.\scripts\release.ps1 -Version 0.3.0
+```
+Das setzt die Versionsnummer, committet und pusht den Tag. GitHub Actions baut daraufhin das Setup
+und erstellt das Release (`.github/workflows/release.yml`). Das Projekt muss öffentlich sein, sonst
+erreichen die Launcher es nicht.
+
+Nur das Setup bauen: `.\scripts\package.ps1` (nimmt das GitHub-Projekt aus dem Git-Remote `origin`
+oder aus `-Repo name/projekt`). Soll ein Release von Hand hochgeladen werden: Der Tag muss `vX.Y.Z`
+heißen, die Datei genau `EM4Revive-Setup.exe`, und ihre Version muss zum Tag passen.
+
+## Bauen & Installieren (Entwicklung)
 ```powershell
 .\scripts\build.ps1      # Tests + Release-Build nach dist\
 .\scripts\install.ps1    # kopiert dinput8.dll + em4revive.toml ins Spiel

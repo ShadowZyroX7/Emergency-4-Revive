@@ -1,0 +1,28 @@
+[package]
+name = "em4r-setup"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "EM4 Revive Setup: installs, updates and removes the mod in the game folder"
+
+[[bin]]
+name = "EM4Revive-Setup"
+path = "src/main.rs"
+
+[dependencies]
+eframe = "0.31"
+rfd = { version = "0.15", default-features = false }
+sha2 = "0.10"
+winreg = "0.55"
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[build-dependencies]
+embed-manifest = "1"

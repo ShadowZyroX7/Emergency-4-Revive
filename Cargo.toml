@@ -11,11 +11,12 @@ members = [
     "crates/em4r-proxy",
     "crates/em4r-smoke",
     "crates/em4r-launcher",
+    "crates/em4r-setup",
     "crates/em4r-re",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
 authors = ["a.mallwitz"]

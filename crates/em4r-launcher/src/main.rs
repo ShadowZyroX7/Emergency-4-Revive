@@ -11,6 +11,7 @@ mod settings;
 mod settings_page;
 mod stats;
 mod stats_page;
+mod update;
 
 use eframe::egui;
 

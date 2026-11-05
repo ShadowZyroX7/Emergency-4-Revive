@@ -5,6 +5,7 @@ use crate::session::{self, Ending, Running, Summary, Target};
 use crate::settings::{self, Settings};
 use crate::settings_page::SettingsPage;
 use crate::stats_page::StatsPage;
+use crate::update::{self, Updater};
 use em4r_core::launch::StartMode;
 use eframe::egui::{self, Color32, RichText, Vec2};
 use std::collections::HashMap;
@@ -47,6 +48,9 @@ pub struct LauncherApp {
     tab: Tab,
     settings_page: Option<SettingsPage>,
     stats_page: Option<StatsPage>,
+    updater: Updater,
+    /// The current update should be installed (automatic, or button clicked).
+    install_update: bool,
 }
 
 impl LauncherApp {
@@ -61,8 +65,17 @@ impl LauncherApp {
         let settings_path = exe_dir.clone().unwrap_or_default().join("em4revive_launcher.toml");
         let settings = Settings::load(&settings_path);
         let game_dir = settings::find_game_dir(exe_dir.as_deref(), settings.game_dir.as_deref());
+        // The setup installs into the game folder, so a launcher copy living
+        // anywhere else could never update itself.
+        let can_update = update::REPO.is_some() && exe_dir.is_some() && exe_dir == game_dir;
+        let updater = Updater::new(cc.egui_ctx.clone(), update::State::Disabled);
+        if can_update && !std::env::args().any(|a| a.eq_ignore_ascii_case("--no-update-check")) {
+            updater.start_check();
+        }
 
         let mut app = Self {
+            updater,
+            install_update: false,
             game_dir,
             settings_path,
             settings: settings.clone(),
@@ -166,6 +179,55 @@ impl LauncherApp {
             }
         }
     }
+
+    /// Moves an update forward. Never closes the launcher while a game runs.
+    fn drive_update(&mut self, ctx: &egui::Context) {
+        match self.updater.state() {
+            update::State::Available(release) => {
+                let automatic = !self.settings.manual_updates && self.settings.last_update_attempt != release.version;
+                if self.install_update || automatic {
+                    self.install_update = true;
+                    self.updater.start_download(release);
+                }
+            }
+            update::State::Ready { release, path } if self.install_update && self.running.is_none() => {
+                let Some(dir) = self.game_dir.clone() else { return };
+                self.settings.last_update_attempt = release.version;
+                self.settings.save(&self.settings_path);
+                match update::launch_setup(&path, &dir) {
+                    Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                    Err(e) => {
+                        self.install_update = false;
+                        self.error = Some(format!("Update konnte nicht gestartet werden: {e}"));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn update_banner(&mut self, ctx: &egui::Context) {
+        let (text, can_install) = match self.updater.state() {
+            update::State::Available(r) => (format!("Update auf v{} verfügbar", r.version), true),
+            update::State::Downloading { release, done } => {
+                let percent = done * 100 / release.size.max(1);
+                (format!("Update auf v{} wird geladen… {percent} %", release.version), false)
+            }
+            update::State::Ready { release, .. } if self.running.is_some() => {
+                (format!("Update auf v{} wird nach dem Spielende installiert", release.version), false)
+            }
+            update::State::Ready { release, .. } => (format!("Update auf v{} wird installiert…", release.version), false),
+            _ => return,
+        };
+        egui::TopBottomPanel::bottom("update_banner").exact_height(34.0).show(ctx, |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.label(RichText::new(text).color(WARN));
+                if can_install && ui.button("Jetzt installieren").clicked() {
+                    self.install_update = true;
+                }
+            });
+        });
+    }
 }
 
 impl eframe::App for LauncherApp {
@@ -174,6 +236,8 @@ impl eframe::App for LauncherApp {
         if self.running.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
         }
+        self.drive_update(ctx);
+        self.update_banner(ctx);
 
         egui::TopBottomPanel::top("header").exact_height(56.0).show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
@@ -231,7 +295,18 @@ impl eframe::App for LauncherApp {
                         self.textures.clear();
                         self.refresh();
                     }
-                    ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).small().color(MUTED));
+                    ui.label(RichText::new(format!("v{}", update::CURRENT_VERSION)).small().color(MUTED));
+                    let state = self.updater.state();
+                    if state != update::State::Disabled {
+                        let mut automatic = !self.settings.manual_updates;
+                        if ui.checkbox(&mut automatic, RichText::new("Automatische Updates").small()).changed() {
+                            self.settings.manual_updates = !automatic;
+                            self.settings.save(&self.settings_path);
+                        }
+                    }
+                    if let update::State::Failed(reason) = &state {
+                        ui.label(RichText::new("Update fehlgeschlagen").small().color(WARN)).on_hover_text(reason);
+                    }
                 });
             });
         });
