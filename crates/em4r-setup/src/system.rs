@@ -6,12 +6,14 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_CANCELLED, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, ERROR_CANCELLED, INVALID_HANDLE_VALUE,
+};
 use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::Threading::{
-    GetExitCodeProcess, OpenProcess, WaitForSingleObject, INFINITE, PROCESS_SYNCHRONIZE,
+    CreateMutexW, GetExitCodeProcess, OpenProcess, WaitForSingleObject, INFINITE, PROCESS_SYNCHRONIZE,
 };
 use windows_sys::Win32::UI::Shell::{ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -46,6 +48,14 @@ pub fn is_process_running(exe_name: &str) -> bool {
         CloseHandle(snap);
         found
     }
+}
+
+/// True for the first caller on this machine until that process exits. The
+/// handle stays open on purpose: Windows releases it with the process.
+pub fn claim_update_slot() -> bool {
+    let name = wide("Local\\EM4Revive-Setup-Update");
+    // SAFETY: `name` is NUL-terminated and outlives the call.
+    unsafe { !CreateMutexW(core::ptr::null(), 0, name.as_ptr()).is_null() && GetLastError() != ERROR_ALREADY_EXISTS }
 }
 
 /// Wait until the process has ended (no-op if it is already gone).

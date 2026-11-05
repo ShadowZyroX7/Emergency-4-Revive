@@ -208,10 +208,14 @@ impl LauncherApp {
             }
             update::State::Ready { release, path } if self.install_update && !self.update_blocked() => {
                 let Some(dir) = self.game_dir.clone() else { return };
-                self.settings.last_update_attempt = release.version;
+                self.settings.last_update_attempt = release.version.clone();
                 self.settings.save(&self.settings_path);
                 match update::launch_setup(&path, &dir) {
-                    Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                    Ok(()) => {
+                        // Further frames run until the window is gone: start only once.
+                        self.updater.mark_installing(release);
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                     Err(e) => {
                         self.install_update = false;
                         self.error = Some(format!("Update konnte nicht gestartet werden: {e}"));
@@ -232,7 +236,9 @@ impl LauncherApp {
             update::State::Ready { release, .. } if self.update_blocked() => {
                 (format!("Update auf v{} wird installiert, sobald Spiel und Downloads fertig sind", release.version), false)
             }
-            update::State::Ready { release, .. } => (format!("Update auf v{} wird installiert…", release.version), false),
+            update::State::Ready { release, .. } | update::State::Installing(release) => {
+                (format!("Update auf v{} wird installiert…", release.version), false)
+            }
             _ => return,
         };
         egui::TopBottomPanel::bottom("update_banner").exact_height(34.0).show(ctx, |ui| {

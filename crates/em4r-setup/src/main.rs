@@ -60,6 +60,11 @@ pub fn start_launcher(dir: &Path, extra_args: &[&str]) -> io::Result<()> {
 }
 
 fn run_update(dir: &Path, wait_pid: Option<u32>) -> ExitCode {
+    // Launchers up to 0.2.2 can start the setup twice. Two copies would fight
+    // over the same files, and the loser would report a failed update.
+    if !system::claim_update_slot() {
+        return ExitCode::SUCCESS;
+    }
     if let Some(pid) = wait_pid {
         system::wait_for_pid(pid, 30_000);
     }

@@ -34,6 +34,8 @@ pub enum State {
     Available(Release),
     Downloading { release: Release, done: u64 },
     Ready { release: Release, path: PathBuf },
+    /// The setup was started; the launcher is about to close.
+    Installing(Release),
     Failed(String),
 }
 
@@ -105,6 +107,10 @@ impl Updater {
     fn set(&self, state: State) {
         *self.state.lock().unwrap() = state;
         self.repaint.request_repaint();
+    }
+
+    pub fn mark_installing(&self, release: Release) {
+        self.set(State::Installing(release));
     }
 
     pub fn start_check(&self) {
