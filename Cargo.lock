@@ -943,7 +943,7 @@ dependencies = [
 
 [[package]]
 name = "em4r-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "serde",
  "toml",
@@ -951,14 +951,14 @@ dependencies = [
 
 [[package]]
 name = "em4r-fx"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
 ]
 
 [[package]]
 name = "em4r-gl"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
  "em4r-fx",
@@ -966,7 +966,7 @@ dependencies = [
 
 [[package]]
 name = "em4r-launcher"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "eframe",
  "em4r-core",
@@ -984,7 +984,7 @@ dependencies = [
 
 [[package]]
 name = "em4r-perf"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
  "em4r-fx",
@@ -993,14 +993,14 @@ dependencies = [
 
 [[package]]
 name = "em4r-prof"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
 ]
 
 [[package]]
 name = "em4r-proxy"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
  "em4r-fx",
@@ -1013,14 +1013,14 @@ dependencies = [
 
 [[package]]
 name = "em4r-re"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "iced-x86",
 ]
 
 [[package]]
 name = "em4r-setup"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "eframe",
  "embed-manifest",
@@ -1032,21 +1032,21 @@ dependencies = [
 
 [[package]]
 name = "em4r-smoke"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
 ]
 
 [[package]]
 name = "em4r-window"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
 ]
 
 [[package]]
 name = "em4r-zlib"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "em4r-core",
  "libz-rs-sys",
