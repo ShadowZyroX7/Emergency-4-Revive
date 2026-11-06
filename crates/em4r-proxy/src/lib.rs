@@ -80,6 +80,11 @@ fn init(module: HMODULE) {
     if cfg.game.skip_intro {
         apply_exe_patch(&em4r_core::patch::SKIP_INTRO);
     }
+    // Not in the editor: saving a map there must keep the map's own bloom value.
+    if cfg.game.keep_bloom_setting && !std::env::args().any(|a| a.eq_ignore_ascii_case("-editor")) {
+        apply_exe_patch(&em4r_core::patch::KEEP_BLOOM_RESET);
+        apply_exe_patch(&em4r_core::patch::KEEP_BLOOM_FROM_MAP);
+    }
     if is_em4_exe() {
         autostart::init(&game_dir, cfg.game.fast_exit);
         if cfg.game.fast_logfile {

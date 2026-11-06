@@ -3,6 +3,7 @@
 use crate::em4cfg::{self, Em4Cfg};
 use crate::revive_cfg::{Preset, ReviveConfig};
 use eframe::egui::{self, Color32, RichText};
+use em4r_core::Config;
 use std::path::{Path, PathBuf};
 
 const MUTED: Color32 = Color32::from_rgb(150, 154, 160);
@@ -20,8 +21,14 @@ pub struct SettingsPage {
     fullscreen: bool,
     bloom: bool,
     shadows: bool,
+    /// State of both files as last read or saved, to detect unsaved changes.
+    saved_revive: Option<Config>,
+    saved_game: GameOptions,
     message: Option<(bool, String)>,
 }
+
+/// Resolution, fullscreen, bloom, shadows.
+type GameOptions = ((u32, u32), bool, bool, bool);
 
 impl SettingsPage {
     pub fn new(game_dir: &Path) -> Self {
@@ -34,6 +41,8 @@ impl SettingsPage {
             fullscreen: true,
             bloom: true,
             shadows: true,
+            saved_revive: None,
+            saved_game: ((1920, 1080), true, true, true),
             message: None,
         };
         p.reload();
@@ -57,20 +66,38 @@ impl SettingsPage {
             self.modes.push(self.resolution);
             self.modes.sort();
         }
+        self.saved_revive = self.revive.as_ref().ok().map(|r| r.cfg.clone());
+        self.saved_game = self.game_options();
     }
 
-    fn save(&mut self) {
+    fn game_options(&self) -> GameOptions {
+        (self.resolution, self.fullscreen, self.bloom, self.shadows)
+    }
+
+    /// Does the page hold changes that are not in the files yet?
+    pub fn has_unsaved_changes(&self) -> bool {
+        let revive = matches!(&self.revive, Ok(r) if self.saved_revive.as_ref() != Some(&r.cfg));
+        let game = self.em4.is_ok() && self.game_options() != self.saved_game;
+        revive || game
+    }
+
+    /// Returns whether everything was written.
+    pub fn save(&mut self) -> bool {
         let mut notes = Vec::new();
         let mut ok = true;
         if let Ok(r) = self.revive.as_mut() {
             match r.save() {
-                Ok(()) => notes.push("EM4-Revive-Einstellungen gespeichert".to_string()),
+                Ok(()) => {
+                    self.saved_revive = Some(r.cfg.clone());
+                    notes.push("EM4-Revive-Einstellungen gespeichert".to_string());
+                }
                 Err(e) => {
                     ok = false;
                     notes.push(format!("em4revive.toml: {e}"));
                 }
             }
         }
+        let game_options = self.game_options();
         if let Ok(c) = self.em4.as_mut() {
             let b = |v: bool| if v { "1".to_string() } else { "0".to_string() };
             let changes = [
@@ -81,8 +108,12 @@ impl SettingsPage {
                 ("e4_shadow", b(self.shadows)),
             ];
             match c.save(&changes, &self.game_dir.join("_em4revive_backup")) {
-                Ok(0) => {}
-                Ok(n) => notes.push(format!("{n} Spieleinstellung(en) in em4.cfg gespeichert")),
+                Ok(n) => {
+                    self.saved_game = game_options;
+                    if n > 0 {
+                        notes.push(format!("{n} Spieleinstellung(en) in em4.cfg gespeichert"));
+                    }
+                }
                 Err(e) => {
                     ok = false;
                     notes.push(format!("em4.cfg: {e}"));
@@ -90,6 +121,7 @@ impl SettingsPage {
             }
         }
         self.message = Some((ok, notes.join(" · ")));
+        ok
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui, game_running: bool) {
@@ -304,4 +336,58 @@ fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
         ui.add_space(6.0);
         body(ui);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fake_game_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("em4r_settings_{tag}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("em4.cfg"),
+            "<config>\n<var name=\"e4_bloom\" value=\"0\" />\n<var name=\"e4_shadow\" value=\"1\" />\n<var name=\"r_fullscreen\" value=\"1\" />\n<var name=\"r_xres\" value=\"1920\" />\n<var name=\"r_yres\" value=\"1080\" />\n</config>\n",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn unsaved_changes_follow_edit_save_and_reload() {
+        let dir = fake_game_dir("flow");
+        let mut p = SettingsPage::new(&dir);
+        assert!(!p.has_unsaved_changes());
+
+        // Game option: changing it back counts as no change.
+        p.bloom = true;
+        assert!(p.has_unsaved_changes());
+        p.bloom = false;
+        assert!(!p.has_unsaved_changes());
+
+        p.bloom = true;
+        assert!(p.save());
+        assert!(!p.has_unsaved_changes());
+        assert!(SettingsPage::new(&dir).bloom);
+
+        // Mod option, discarded by reloading.
+        p.revive.as_mut().unwrap().cfg.game.skip_intro ^= true;
+        assert!(p.has_unsaved_changes());
+        p.reload();
+        assert!(!p.has_unsaved_changes());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn failed_save_keeps_changes_marked_as_unsaved() {
+        let dir = fake_game_dir("fail");
+        let mut p = SettingsPage::new(&dir);
+        p.bloom = true;
+        // A directory in place of the file makes the write fail.
+        std::fs::remove_file(dir.join("em4.cfg")).unwrap();
+        std::fs::create_dir(dir.join("em4.cfg")).unwrap();
+        assert!(!p.save());
+        assert!(p.has_unsaved_changes());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

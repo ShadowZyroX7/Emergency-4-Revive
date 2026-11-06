@@ -56,6 +56,7 @@ impl ReviveConfig {
         self.set("game", "skip_intro", value(c.game.skip_intro));
         self.set("game", "fast_logfile", value(c.game.fast_logfile));
         self.set("game", "fast_exit", value(c.game.fast_exit));
+        self.set("game", "keep_bloom_setting", value(c.game.keep_bloom_setting));
         self.set("window", "borderless", value(c.window.borderless));
         self.set("window", "pause_in_background", value(c.window.pause_in_background));
         self.set("window", "allow_system_keys", value(c.window.allow_system_keys));

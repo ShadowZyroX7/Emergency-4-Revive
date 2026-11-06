@@ -86,11 +86,12 @@ pub struct Game {
     pub skip_intro: bool,
     pub fast_logfile: bool,
     pub fast_exit: bool,
+    pub keep_bloom_setting: bool,
 }
 
 impl Default for Game {
     fn default() -> Self {
-        Self { skip_intro: true, fast_logfile: true, fast_exit: true }
+        Self { skip_intro: true, fast_logfile: true, fast_exit: true, keep_bloom_setting: true }
     }
 }
 

@@ -29,6 +29,13 @@ enum Tab {
     Submods,
 }
 
+/// What the user wanted to do when the unsaved-settings question came up.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Leave {
+    Tab(Tab),
+    Close,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selection {
     Original,
@@ -55,6 +62,10 @@ pub struct LauncherApp {
     updater: Updater,
     /// The current update should be installed (automatic, or button clicked).
     install_update: bool,
+    /// Waiting for the answer to the unsaved-settings question.
+    leave: Option<Leave>,
+    /// The user chose to close without saving.
+    close_confirmed: bool,
 }
 
 impl LauncherApp {
@@ -80,6 +91,8 @@ impl LauncherApp {
         let mut app = Self {
             updater,
             install_update: false,
+            leave: None,
+            close_confirmed: false,
             submods_page: None,
             game_dir,
             settings_path,
@@ -187,13 +200,100 @@ impl LauncherApp {
                 self.last = Some(session::summarize(dir, &run));
                 // Fresh numbers for the statistics tab.
                 self.stats_page = Some(StatsPage::new(dir));
+                // The game saved em4.cfg on exit; saving stale text would undo that.
+                if self.settings_page.is_some() {
+                    self.settings_page = Some(SettingsPage::new(dir));
+                }
             }
         }
     }
 
     /// Closing the launcher for an update has to wait for these.
     fn update_blocked(&self) -> bool {
-        self.running.is_some() || self.submods_page.as_ref().is_some_and(SubmodsPage::busy)
+        self.running.is_some() || self.submods_page.as_ref().is_some_and(SubmodsPage::busy) || self.unsaved_settings()
+    }
+
+    /// The settings tab is open and holds changes that are not in the files.
+    fn unsaved_settings(&self) -> bool {
+        self.tab == Tab::Einstellungen && self.settings_page.as_ref().is_some_and(SettingsPage::has_unsaved_changes)
+    }
+
+    fn switch_tab(&mut self, tab: Tab, ctx: &egui::Context) {
+        self.tab = tab;
+        match tab {
+            Tab::Einstellungen => {
+                if let Some(dir) = &self.game_dir {
+                    // Always show the current state of the files.
+                    self.settings_page = Some(SettingsPage::new(dir));
+                }
+            }
+            Tab::Statistik => {
+                if let Some(dir) = &self.game_dir {
+                    self.stats_page = Some(StatsPage::new(dir));
+                }
+            }
+            Tab::Submods => {
+                if let (None, Some(dir)) = (&self.submods_page, &self.game_dir) {
+                    self.submods_page = Some(SubmodsPage::new(dir, ctx.clone()));
+                }
+            }
+            Tab::Spielen => self.refresh_status(),
+        }
+    }
+
+    fn finish_leaving(&mut self, leave: Leave, ctx: &egui::Context) {
+        match leave {
+            Leave::Tab(tab) => self.switch_tab(tab, ctx),
+            Leave::Close => {
+                self.close_confirmed = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+        }
+    }
+
+    /// Asks what to do with unsaved settings before leaving the tab or closing.
+    fn unsaved_dialog(&mut self, ctx: &egui::Context) {
+        let Some(leave) = self.leave else { return };
+        #[derive(Clone, Copy)]
+        enum Choice {
+            Save,
+            Discard,
+            Cancel,
+        }
+        let mut choice = None;
+        let modal = egui::Modal::new(egui::Id::new("unsaved_settings")).show(ctx, |ui| {
+            ui.set_width(380.0);
+            ui.label(RichText::new("Ungespeicherte Änderungen").size(18.0).strong().color(Color32::WHITE));
+            ui.add_space(6.0);
+            ui.label("Du hast Einstellungen geändert, aber noch nicht gespeichert.");
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new(RichText::new("Speichern").strong().color(Color32::WHITE)).fill(ACCENT)).clicked() {
+                    choice = Some(Choice::Save);
+                }
+                if ui.button("Nicht speichern").clicked() {
+                    choice = Some(Choice::Discard);
+                }
+                if ui.button("Abbrechen").clicked() {
+                    choice = Some(Choice::Cancel);
+                }
+            });
+        });
+        if choice.is_none() && modal.should_close() {
+            choice = Some(Choice::Cancel);
+        }
+        let Some(choice) = choice else { return };
+        self.leave = None;
+        match choice {
+            Choice::Save => {
+                // On failure the user stays on the tab and sees the error there.
+                if self.settings_page.as_mut().is_some_and(SettingsPage::save) {
+                    self.finish_leaving(leave, ctx);
+                }
+            }
+            Choice::Discard => self.finish_leaving(leave, ctx),
+            Choice::Cancel => {}
+        }
     }
 
     /// Moves an update forward. Never closes the launcher while a game runs.
@@ -234,7 +334,7 @@ impl LauncherApp {
                 (format!("Update auf v{} wird geladen… {percent} %", release.version), false)
             }
             update::State::Ready { release, .. } if self.update_blocked() => {
-                (format!("Update auf v{} wird installiert, sobald Spiel und Downloads fertig sind", release.version), false)
+                (format!("Update auf v{} wird installiert, sobald Spiel und Downloads fertig und Einstellungen gespeichert sind", release.version), false)
             }
             update::State::Ready { release, .. } | update::State::Installing(release) => {
                 (format!("Update auf v{} wird installiert…", release.version), false)
@@ -254,6 +354,14 @@ impl LauncherApp {
 
 impl eframe::App for LauncherApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|i| i.viewport().close_requested())
+            && !self.close_confirmed
+            && self.unsaved_settings()
+            && !matches!(self.updater.state(), update::State::Installing(_))
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.leave = Some(Leave::Close);
+        }
         self.poll_running();
         if self.running.is_some() {
             ctx.request_repaint_after(Duration::from_millis(500));
@@ -264,6 +372,7 @@ impl eframe::App for LauncherApp {
         }
         self.drive_update(ctx);
         self.update_banner(ctx);
+        self.unsaved_dialog(ctx);
 
         egui::TopBottomPanel::top("header").exact_height(56.0).show(ctx, |ui| {
             ui.horizontal_centered(|ui| {
@@ -280,25 +389,10 @@ impl eframe::App for LauncherApp {
                         .stroke(egui::Stroke::new(1.0_f32, if active { ACCENT } else { Color32::TRANSPARENT }))
                         .min_size(Vec2::new(110.0, 32.0));
                     if ui.add(b).clicked() && self.tab != tab {
-                        self.tab = tab;
-                        match tab {
-                            Tab::Einstellungen => {
-                                if let Some(dir) = &self.game_dir {
-                                    // Always show the current state of the files.
-                                    self.settings_page = Some(SettingsPage::new(dir));
-                                }
-                            }
-                            Tab::Statistik => {
-                                if let Some(dir) = &self.game_dir {
-                                    self.stats_page = Some(StatsPage::new(dir));
-                                }
-                            }
-                            Tab::Submods => {
-                                if let (None, Some(dir)) = (&self.submods_page, &self.game_dir) {
-                                    self.submods_page = Some(SubmodsPage::new(dir, ctx.clone()));
-                                }
-                            }
-                            Tab::Spielen => self.refresh_status(),
+                        if self.unsaved_settings() {
+                            self.leave = Some(Leave::Tab(tab));
+                        } else {
+                            self.switch_tab(tab, ctx);
                         }
                     }
                 }

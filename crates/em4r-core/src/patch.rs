@@ -45,6 +45,29 @@ pub const SKIP_INTRO: BytePatch = BytePatch {
     replacement: &[0xE9, 0x30, 0x00, 0x00, 0x00],
 };
 
+/// Stop the map loader from overwriting the player's bloom setting.
+///
+/// The loader (0x4D88A0, called by Game::LoadMap) first sets `e4_bloom`
+/// (variable at 0xA93590) to 0 and, for map versions >= 0x11F, then to the
+/// value stored in the map. Leaving the game saves that value to em4.cfg, so
+/// the player's choice is lost after every map. Each `push; mov ecx; call`
+/// becomes NOPs; the setter pops its own argument (`ret 4`), so the stack
+/// stays balanced, and the map's byte has already been read at that point.
+pub const KEEP_BLOOM_RESET: BytePatch = BytePatch {
+    name: "Bloom-Einstellung behalten (Zurücksetzen)",
+    rva: 0xDAEFF,
+    expected: &[0x53, 0xB9, 0x90, 0x35, 0xA9, 0x00, 0xE8, 0x56, 0x8D, 0x25, 0x00],
+    replacement: &[0x90; 11],
+};
+
+/// See [`KEEP_BLOOM_RESET`].
+pub const KEEP_BLOOM_FROM_MAP: BytePatch = BytePatch {
+    name: "Bloom-Einstellung behalten (Kartenwert)",
+    rva: 0xDAF36,
+    expected: &[0x51, 0xB9, 0x90, 0x35, 0xA9, 0x00, 0xE8, 0x1F, 0x8D, 0x25, 0x00],
+    replacement: &[0x90; 11],
+};
+
 /// Bytes of a `call rel32` at `site` that targets `target`.
 pub fn call_rel32(site: usize, target: usize) -> [u8; 5] {
     let rel = (target as i64 - (site as i64 + 5)) as i32;
@@ -196,6 +219,18 @@ mod tests {
         assert_eq!(unsafe { swap_pointer(p, 0x9551D8, 0x1234) }, PatchResult::Applied);
         assert_eq!(slot, 0x1234);
         assert!(matches!(unsafe { swap_pointer(p, 0x9551D8, 0x5678) }, PatchResult::Mismatch(_)));
+    }
+
+    #[test]
+    fn keep_bloom_patches_call_the_bloom_setter() {
+        for p in [&KEEP_BLOOM_RESET, &KEEP_BLOOM_FROM_MAP] {
+            assert_eq!(p.expected.len(), p.replacement.len());
+            // mov ecx, 0xA93590 (e4_bloom)
+            assert_eq!(&p.expected[1..6], &[0xB9, 0x90, 0x35, 0xA9, 0x00]);
+            // call 0x733C60 (bool setter, ret 4)
+            let site = 0x0040_0000 + p.rva + 6;
+            assert_eq!(&p.expected[6..11], &call_rel32(site, 0x733C60));
+        }
     }
 
     #[test]

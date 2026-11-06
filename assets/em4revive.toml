@@ -20,6 +20,9 @@ fast_logfile = true
 # Beim Beenden die Einstellungen speichern und das Spiel sofort schließen, statt das
 # fehlerhafte Aufräumen der Engine laufen zu lassen (das stürzt mit vielen Mods ab).
 fast_exit = true
+# Bloom-Einstellung aus em4.cfg behalten. Ohne das überschreibt das Spiel sie beim Laden
+# jeder Karte und speichert den überschriebenen Wert beim Beenden. (Gilt nicht im Editor.)
+keep_bloom_setting = true
 
 [window]
 # Randloses Vollbild: keine Auflösungsumschaltung, kein Minimieren -> Alt+Tab geht sofort,

@@ -273,6 +273,24 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// Works on a temp copy of the real file, never on the file itself.
+    #[test]
+    fn bloom_change_survives_reload_on_copy_of_real_cfg() {
+        let real = Path::new(r"C:\SteamLibrary\steamapps\common\EMERGENCY 4 Deluxe\em4.cfg");
+        let Ok(bytes) = std::fs::read(real) else { return };
+        let dir = std::env::temp_dir().join(format!("em4r_em4cfg_real_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("em4.cfg"), &bytes).unwrap();
+        let mut c = Em4Cfg::load(&dir).unwrap();
+        let flipped = if c.get_bool("e4_bloom") { "0" } else { "1" };
+        assert_eq!(c.save(&[("e4_bloom", flipped.into())], &dir.join("b")).unwrap(), 1);
+        let reloaded = Em4Cfg::load(&dir).unwrap();
+        assert_eq!(reloaded.get("e4_bloom"), Some(flipped));
+        assert_eq!(reloaded.vars.len(), c.vars.len());
+        assert_eq!(std::fs::read(dir.join("em4.cfg")).unwrap().len(), bytes.len());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn real_display_modes_and_real_cfg() {
         let modes = display_modes();
